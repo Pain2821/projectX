@@ -1,4 +1,6 @@
-﻿import React from "react";
+﻿import React, { useState } from "react";
+import { fetchIssTleData } from "../common/api";
+import { calculateNextIssPass, formatPassSummary } from "../common/hooks";
 
 function formatCoordinate(value) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -42,6 +44,51 @@ function StatItem({ label, value }) {
 }
 
 export default function StatusBar({ position, lastUpdated, loading, error }) {
+  const [passMessage, setPassMessage] = useState("");
+  const [passLoading, setPassLoading] = useState(false);
+  const [passError, setPassError] = useState("");
+
+  const handleNextPass = () => {
+    if (!navigator.geolocation) {
+      setPassError("Geolocation is not supported in this browser.");
+      return;
+    }
+
+    setPassLoading(true);
+    setPassError("");
+    setPassMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (geoPosition) => {
+        try {
+          const tle = await fetchIssTleData();
+          const pass = calculateNextIssPass({
+            line1: tle.line1,
+            line2: tle.line2,
+            latitude: geoPosition.coords.latitude,
+            longitude: geoPosition.coords.longitude,
+            heightMeters: geoPosition.coords.altitude || 0,
+          });
+
+          setPassMessage(formatPassSummary(pass));
+        } catch (calculationError) {
+          setPassError(calculationError.message || "Unable to calculate next ISS pass.");
+        } finally {
+          setPassLoading(false);
+        }
+      },
+      (geoError) => {
+        setPassLoading(false);
+        setPassError(geoError.message || "Unable to access your location.");
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 60000,
+      }
+    );
+  };
+
   return (
     <section
       style={{
@@ -58,6 +105,7 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
         flexDirection: "column",
         gap: "6px",
         minWidth: "220px",
+        maxWidth: "420px",
         boxShadow: "0 8px 22px rgba(0, 0, 0, 0.35)",
       }}
     >
@@ -70,6 +118,30 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
         label="UPDATED"
         value={lastUpdated ? lastUpdated.toLocaleTimeString() : loading ? "Loading..." : "--"}
       />
+
+      <button
+        type="button"
+        onClick={handleNextPass}
+        disabled={passLoading}
+        style={{
+          marginTop: "4px",
+          padding: "8px 10px",
+          borderRadius: "8px",
+          border: "1px solid rgba(103, 232, 249, 0.45)",
+          background: passLoading ? "rgba(15, 23, 42, 0.85)" : "rgba(8, 23, 44, 0.9)",
+          color: "#dbeafe",
+          cursor: passLoading ? "not-allowed" : "pointer",
+          fontSize: "12px",
+          textAlign: "left",
+        }}
+      >
+        {passLoading ? "Calculating next pass..." : "When will ISS pass over me?"}
+      </button>
+
+      {passMessage ? (
+        <div style={{ color: "#bfdbfe", fontSize: "12px", lineHeight: 1.35 }}>{passMessage}</div>
+      ) : null}
+      {passError ? <div style={{ color: "#fca5a5", fontSize: "12px" }}>{passError}</div> : null}
       {error ? <div style={{ color: "#fca5a5", fontSize: "12px" }}>API Error: {error}</div> : null}
     </section>
   );

@@ -10,3 +10,17 @@ export async function fetchIssLocation() {
 
   return response.json();
 }
+
+export async function fetchIssTleData() {
+  const endpoints = [API_URLS.tledata, API_URLS.tles];
+
+  for (const endpoint of endpoints) {
+    const response = await fetch(`${BASE_API_URL}${endpoint}`);
+
+    if (response.ok) {
+      return response.json();
+    }
+  }
+
+  throw new Error("Unable to load ISS TLE data.");
+}
