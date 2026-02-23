@@ -1,18 +1,25 @@
-﻿import React from "react";
+﻿import React, { useMemo } from "react";
 import { Polyline } from "react-leaflet";
 
-export default function OrbitPath({ history }) {
-  if (!history || history.length < 2) {
+function OrbitPath({ history }) {
+  const segments = useMemo(() => {
+    if (!history || history.length < 2) {
+      return [];
+    }
+
+    const points = [];
+    for (let i = 1; i < history.length; i += 1) {
+      points.push([
+        [history[i - 1].latitude, history[i - 1].longitude],
+        [history[i].latitude, history[i].longitude],
+      ]);
+    }
+
+    return points;
+  }, [history]);
+
+  if (segments.length === 0) {
     return null;
-  }
-
-  const segments = [];
-
-  for (let i = 1; i < history.length; i += 1) {
-    segments.push([
-      [history[i - 1].latitude, history[i - 1].longitude],
-      [history[i].latitude, history[i].longitude],
-    ]);
   }
 
   return (
@@ -46,3 +53,5 @@ export default function OrbitPath({ history }) {
     </>
   );
 }
+
+export default React.memo(OrbitPath);

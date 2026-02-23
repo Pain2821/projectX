@@ -3,6 +3,7 @@ import { fetchIssLocation } from "../common/api";
 import { IssContext } from "../common/context";
 
 const POLL_INTERVAL_MS = 1000;
+const TRAIL_INTERVAL_MS = 5000;
 const MAX_HISTORY_POINTS = 80;
 
 export function ThemeProvider({ children }) {
@@ -55,6 +56,10 @@ export function IssProvider({ children }) {
       setPosition(nextPosition);
       setHistory((prev) => {
         const previous = prev[prev.length - 1];
+
+        if (previous && nextPosition.timestamp - previous.timestamp < TRAIL_INTERVAL_MS) {
+          return prev;
+        }
 
         if (
           previous &&

@@ -1,13 +1,7 @@
-﻿import React, { useMemo } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { Polygon, Polyline } from "react-leaflet";
 
-function toRadians(degrees) {
-  return (degrees * Math.PI) / 180;
-}
-
-function toDegrees(radians) {
-  return (radians * 180) / Math.PI;
-}
+const SHADOW_UPDATE_INTERVAL_MS = 60000;
 
 function normalizeLongitude(longitude) {
   let value = longitude;
@@ -44,7 +38,6 @@ function findTerminatorLatitude(date, longitude) {
     return high;
   }
 
-  // Safety fallback if a sign change is numerically unstable.
   if (lowAltitude * highAltitude > 0) {
     return lowAltitude < 0 ? -89.5 : 89.5;
   }
@@ -114,10 +107,7 @@ function estimateAntiSolarPoint(date) {
     }
   }
 
-  return [
-    -best.latitude,
-    normalizeLongitude(best.longitude + 180),
-  ];
+  return [-best.latitude, normalizeLongitude(best.longitude + 180)];
 }
 
 function buildNightPolygon(terminator, antiSolar) {
@@ -132,10 +122,18 @@ function shiftLongitudes(points, shift) {
 }
 
 export default function DayNightOverlay() {
-  const now = Date.now();
+  const [shadowTime, setShadowTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setShadowTime(Date.now());
+    }, SHADOW_UPDATE_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   const { wrappedNightPolygons, wrappedTerminatorLines } = useMemo(() => {
-    const date = new Date(now);
+    const date = new Date(shadowTime);
 
     if (!window.SunCalc) {
       return {
@@ -153,7 +151,7 @@ export default function DayNightOverlay() {
       wrappedNightPolygons: shifts.map((shift) => shiftLongitudes(nightPolygon, shift)),
       wrappedTerminatorLines: shifts.map((shift) => shiftLongitudes(terminator, shift)),
     };
-  }, [now]);
+  }, [shadowTime]);
 
   return (
     <>

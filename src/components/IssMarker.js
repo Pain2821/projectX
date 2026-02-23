@@ -1,4 +1,4 @@
-﻿import React from "react";
+﻿import React, { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import { Marker, Popup } from "react-leaflet";
 
@@ -24,13 +24,94 @@ const issIcon = L.divIcon({
   popupAnchor: [0, -14],
 });
 
+function shortestLongitudeDelta(fromLongitude, toLongitude) {
+  let delta = toLongitude - fromLongitude;
+
+  if (delta > 180) {
+    delta -= 360;
+  }
+  if (delta < -180) {
+    delta += 360;
+  }
+
+  return delta;
+}
+
+function normalizeLongitude(longitude) {
+  let value = longitude;
+
+  while (value > 180) {
+    value -= 360;
+  }
+  while (value < -180) {
+    value += 360;
+  }
+
+  return value;
+}
+
 export default function IssMarker({ position }) {
-  if (!position) {
+  const markerRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const initialPositionRef = useRef(null);
+
+  const markerPosition = useMemo(() => {
+    if (!position) {
+      return null;
+    }
+
+    if (!initialPositionRef.current) {
+      initialPositionRef.current = [position.latitude, position.longitude];
+    }
+
+    return initialPositionRef.current;
+  }, [position]);
+
+  useEffect(() => {
+    if (!position || !markerRef.current) {
+      return;
+    }
+
+    const marker = markerRef.current;
+    const start = marker.getLatLng();
+    const targetLatitude = position.latitude;
+    const targetLongitude = position.longitude;
+    const deltaLongitude = shortestLongitudeDelta(start.lng, targetLongitude);
+
+    const durationMs = 700;
+    const startTime = performance.now();
+
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    const animate = (currentTime) => {
+      const progress = Math.min((currentTime - startTime) / durationMs, 1);
+      const nextLatitude = start.lat + (targetLatitude - start.lat) * progress;
+      const nextLongitude = normalizeLongitude(start.lng + deltaLongitude * progress);
+
+      marker.setLatLng([nextLatitude, nextLongitude]);
+
+      if (progress < 1) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [position]);
+
+  if (!position || !markerPosition) {
     return null;
   }
 
   return (
-    <Marker position={[position.latitude, position.longitude]} icon={issIcon}>
+    <Marker ref={markerRef} position={markerPosition} icon={issIcon}>
       <Popup>International Space Station</Popup>
     </Marker>
   );
