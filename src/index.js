@@ -15,10 +15,6 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-if (window.location.pathname === "/") {
-  window.history.replaceState({}, "", "/liveiss");
-}
-
 const rootElement = document.getElementById("root");
 const root = createRoot(rootElement);
 
