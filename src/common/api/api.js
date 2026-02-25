@@ -5,6 +5,8 @@ const SPACE_NEWS_API_BASE = "https://api.spaceflightnewsapi.net/v4";
 const LAUNCH_LIBRARY_API_BASE = "https://ll.thespacedevs.com/2.2.0";
 const NASA_INSIGHT_API_URL =
   "https://api.nasa.gov/insight_weather/?api_key=DEMO_KEY&feedtype=json&ver=1.0";
+const NASA_EXOPLANET_API_URL =
+  "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+top+1500+pl_name,hostname,pl_rade,pl_bmasse,pl_orbper,disc_year,discoverymethod+from+pscomppars+where+pl_rade+is+not+null+and+pl_bmasse+is+not+null+order+by+disc_year+desc&format=json";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
@@ -221,4 +223,26 @@ export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}
 
 export async function fetchMarsWeather(options = {}) {
   return fetchJson(NASA_INSIGHT_API_URL, options);
+}
+
+export async function fetchExoplanets(options = {}) {
+  const fallbackProxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(
+    NASA_EXOPLANET_API_URL
+  )}`;
+  const fallbackProxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(NASA_EXOPLANET_API_URL)}`;
+  const urls = [NASA_EXOPLANET_API_URL, fallbackProxyUrl1, fallbackProxyUrl2];
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      return await fetchJson(url, options);
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("Unable to load exoplanet data.");
 }

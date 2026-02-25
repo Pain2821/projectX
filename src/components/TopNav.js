@@ -44,6 +44,9 @@ export default function TopNav() {
       <NavLink to="/mars" style={linkStyle}>
         Mars Weather
       </NavLink>
+      <NavLink to="/exoplanets" style={linkStyle}>
+        Exoplanets
+      </NavLink>
     </nav>
   );
 }

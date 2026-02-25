@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import TopNav from "./components/TopNav";
 import {
+  ExoplanetsPage,
   HomePage,
   LaunchesPage,
   LiveIssPage,
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/news" element={<SpaceNewsPage />} />
             <Route path="/launches" element={<LaunchesPage />} />
             <Route path="/mars" element={<MarsWeatherPage />} />
+            <Route path="/exoplanets" element={<ExoplanetsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
