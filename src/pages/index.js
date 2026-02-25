@@ -5,3 +5,4 @@ export { default as SpaceNewsPage } from "./SpaceNewsPage";
 export { default as LaunchesPage } from "./LaunchesPage";
 export { default as MarsWeatherPage } from "./MarsWeatherPage";
 export { default as ExoplanetsPage } from "./ExoplanetsPage";
+export { default as OrbitalDebrisPage } from "./OrbitalDebrisPage";

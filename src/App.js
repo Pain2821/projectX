@@ -7,6 +7,7 @@ import {
   LaunchesPage,
   LiveIssPage,
   MarsWeatherPage,
+  OrbitalDebrisPage,
   SatellitesPage,
   SpaceNewsPage,
 } from "./pages";
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/launches" element={<LaunchesPage />} />
             <Route path="/mars" element={<MarsWeatherPage />} />
             <Route path="/exoplanets" element={<ExoplanetsPage />} />
+            <Route path="/debris" element={<OrbitalDebrisPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

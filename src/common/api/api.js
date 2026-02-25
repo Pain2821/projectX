@@ -7,6 +7,7 @@ const NASA_INSIGHT_API_URL =
   "https://api.nasa.gov/insight_weather/?api_key=DEMO_KEY&feedtype=json&ver=1.0";
 const NASA_EXOPLANET_API_URL =
   "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+top+1500+pl_name,hostname,pl_rade,pl_bmasse,pl_orbper,disc_year,discoverymethod+from+pscomppars+where+pl_rade+is+not+null+and+pl_bmasse+is+not+null+order+by+disc_year+desc&format=json";
+const TLE_IVAN_API_BASE = "https://tle.ivanstanojevic.me/api/tle/";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
@@ -17,20 +18,41 @@ async function fetchJson(url, options = {}) {
 
   if (!response.ok) {
     let detailMessage = "";
+    let parsedPayload = null;
+    let retryAfterMs = null;
 
     try {
-      const payload = await response.json();
-      if (typeof payload?.detail === "string") {
-        detailMessage = payload.detail;
-      } else if (typeof payload?.message === "string") {
-        detailMessage = payload.message;
+      parsedPayload = await response.json();
+      if (typeof parsedPayload?.detail === "string") {
+        detailMessage = parsedPayload.detail;
+      } else if (typeof parsedPayload?.message === "string") {
+        detailMessage = parsedPayload.message;
+      } else if (typeof parsedPayload?.response?.message === "string") {
+        detailMessage = parsedPayload.response.message;
       }
     } catch (_error) {
       // Fallback to default message when response is not JSON.
     }
 
+    const retryAfterHeader = response.headers.get("retry-after");
+    if (retryAfterHeader) {
+      const retrySeconds = Number(retryAfterHeader);
+      if (Number.isFinite(retrySeconds) && retrySeconds > 0) {
+        retryAfterMs = retrySeconds * 1000;
+      } else {
+        const retryTs = Date.parse(retryAfterHeader);
+        if (Number.isFinite(retryTs)) {
+          retryAfterMs = Math.max(0, retryTs - Date.now());
+        }
+      }
+    }
+
     const message = detailMessage || `Request failed with status ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = parsedPayload;
+    error.retryAfterMs = retryAfterMs;
+    throw error;
   }
 
   return response.json();
@@ -245,4 +267,24 @@ export async function fetchExoplanets(options = {}) {
   }
 
   throw lastError || new Error("Unable to load exoplanet data.");
+}
+
+export async function fetchIvanTlePage(page = 1, pageSize = 100, options = {}) {
+  let url = "";
+
+  if (typeof page === "string" && page.startsWith("http")) {
+    url = page;
+  } else {
+    const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+    const safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 100;
+    url = `${TLE_IVAN_API_BASE}?page=${safePage}&page-size=${safePageSize}`;
+  }
+
+  const payload = await fetchJson(url, options);
+  const items = Array.isArray(payload?.member) ? payload.member : [];
+
+  return {
+    items,
+    next: payload?.view?.next || null,
+  };
 }

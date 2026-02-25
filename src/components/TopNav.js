@@ -47,6 +47,9 @@ export default function TopNav() {
       <NavLink to="/exoplanets" style={linkStyle}>
         Exoplanets
       </NavLink>
+      <NavLink to="/debris" style={linkStyle}>
+        Orbital Debris
+      </NavLink>
     </nav>
   );
 }
