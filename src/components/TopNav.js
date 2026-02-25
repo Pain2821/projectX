@@ -38,6 +38,9 @@ export default function TopNav() {
       <NavLink to="/news" style={linkStyle}>
         Space News
       </NavLink>
+      <NavLink to="/launches" style={linkStyle}>
+        Launches
+      </NavLink>
     </nav>
   );
 }

@@ -1,24 +1,60 @@
-import React, { useCallback, useState } from "react";
-import { fetchSpaceNewsArticles } from "../common/api";
+import React, { useCallback, useEffect, useState } from "react";
+import { fetchUpcomingLaunches } from "../common/api";
 import { usePaginatedRequest } from "../common/hooks";
 import RocketLoader from "../components/RocketLoader";
 
-function formatPublishedDate(value) {
-  if (!value) {
-    return "Unknown date";
+function formatCountdown(launchDate, nowMs) {
+  const launchTimeMs = new Date(launchDate).getTime();
+
+  if (Number.isNaN(launchTimeMs)) {
+    return "Unknown";
   }
 
-  const date = new Date(value);
+  const delta = launchTimeMs - nowMs;
 
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
+  if (delta <= 0) {
+    return "Launched";
   }
 
-  return date.toLocaleString();
+  const totalSeconds = Math.floor(delta / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-function ArticleCard({ article }) {
-  const image = article.image_url || "https://placehold.co/1200x675/0b1220/cbd5e1?text=Space+News";
+function getRocketName(launch) {
+  return (
+    launch?.rocket?.configuration?.full_name ||
+    launch?.rocket?.configuration?.name ||
+    launch?.rocket?.launcher_stage?.launcher?.configuration?.full_name ||
+    launch?.name ||
+    "Unknown rocket"
+  );
+}
+
+function getProviderName(launch) {
+  return launch?.launch_service_provider?.name || "Unknown provider";
+}
+
+function getPadLocation(launch) {
+  const padName = launch?.pad?.name;
+  const locationName = launch?.pad?.location?.name;
+  const countryCode = launch?.pad?.location?.country_code;
+  const parts = [padName, locationName, countryCode].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(", ") : "Unknown location";
+}
+
+function LaunchCard({ launch, nowMs }) {
+  const hasImage = Boolean(launch?.image);
+  const countdown = formatCountdown(launch?.net, nowMs);
+  const missionName = launch?.mission?.name || launch?.name || "Unknown mission";
+  const rocketName = getRocketName(launch);
+  const providerName = getProviderName(launch);
+  const padLocation = getPadLocation(launch);
 
   return (
     <article
@@ -26,90 +62,87 @@ function ArticleCard({ article }) {
         border: "1px solid rgba(124, 148, 183, 0.35)",
         borderRadius: "14px",
         overflow: "hidden",
-        background: "rgba(5, 10, 22, 0.72)",
+        background: hasImage ? "#060c18" : "rgba(5, 10, 22, 0.72)",
         boxShadow: "0 10px 28px rgba(0, 0, 0, 0.35)",
+        position: "relative",
+        minHeight: "280px",
         display: "flex",
-        flexDirection: "column",
       }}
     >
-      <div
-        style={{
-          width: "100%",
-          aspectRatio: "16 / 9",
-          background: "#111827",
-          overflow: "hidden",
-        }}
-      >
+      {hasImage ? (
         <img
-          src={image}
-          alt={article.title || "Space news"}
+          src={launch.image}
+          alt={missionName}
           loading="lazy"
           style={{
+            position: "absolute",
+            inset: 0,
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            display: "block",
+            filter: "brightness(0.4)",
           }}
         />
-      </div>
+      ) : null}
 
       <div
         style={{
+          position: "relative",
+          zIndex: 1,
+          width: "100%",
           padding: "14px 14px 16px",
           display: "flex",
           flexDirection: "column",
           gap: "10px",
-          flex: 1,
+          background: hasImage
+            ? "linear-gradient(180deg, rgba(5, 10, 22, 0.55) 0%, rgba(5, 10, 22, 0.9) 100%)"
+            : "transparent",
         }}
       >
         <h3
           style={{
             margin: 0,
             color: "#e2e8f0",
-            fontSize: "16px",
-            lineHeight: 1.35,
+            fontSize: "18px",
+            lineHeight: 1.3,
           }}
         >
-          {article.title || "Untitled"}
+          {missionName}
         </h3>
 
-        <div style={{ color: "#9fb5d9", fontSize: "12px" }}>
-          Source: {article.news_site || "Unknown"}
-        </div>
+        <div style={{ color: "#9fb5d9", fontSize: "13px" }}>Rocket: {rocketName}</div>
+        <div style={{ color: "#9fb5d9", fontSize: "13px" }}>Provider: {providerName}</div>
+        <div style={{ color: "#9fb5d9", fontSize: "13px" }}>Pad: {padLocation}</div>
 
-        <div style={{ color: "#94a3b8", fontSize: "12px" }}>
-          Published: {formatPublishedDate(article.published_at)}
-        </div>
-
-        <div style={{ marginTop: "auto" }}>
-          <a
-            href={article.url}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              color: "#67e8f9",
-              textDecoration: "none",
-              fontSize: "13px",
-              borderBottom: "1px solid rgba(103, 232, 249, 0.35)",
-              paddingBottom: "2px",
-            }}
-          >
-            Read More
-          </a>
+        <div
+          style={{
+            marginTop: "auto",
+            padding: "10px 12px",
+            borderRadius: "10px",
+            border: "1px solid rgba(56, 189, 248, 0.35)",
+            background: "rgba(8, 23, 44, 0.72)",
+            color: "#dbeafe",
+            fontSize: "14px",
+            fontWeight: 600,
+            letterSpacing: "0.02em",
+          }}
+        >
+          T-{countdown}
         </div>
       </div>
     </article>
   );
 }
 
-export default function SpaceNewsPage() {
+export default function LaunchesPage() {
   const [pressedArrow, setPressedArrow] = useState("");
-  const itemsPerPage = 20;
-  const fetchNewsPage = useCallback(({ limit, offset, signal }) => {
-    return fetchSpaceNewsArticles(limit, offset, { signal });
+  const [nowMs, setNowMs] = useState(Date.now());
+  const itemsPerPage = 10;
+  const fetchLaunchesPage = useCallback(({ limit, offset, signal }) => {
+    return fetchUpcomingLaunches(limit, offset, { signal });
   }, []);
   const {
-    items: articles,
+    items: launches,
     currentPage,
     totalCount,
     totalPages,
@@ -127,8 +160,16 @@ export default function SpaceNewsPage() {
     canGoNext,
   } = usePaginatedRequest({
     itemsPerPage,
-    fetchPage: fetchNewsPage,
+    fetchPage: fetchLaunchesPage,
   });
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <section
@@ -141,11 +182,9 @@ export default function SpaceNewsPage() {
     >
       <div style={{ maxWidth: "1120px", margin: "0 auto", display: "grid", gap: "14px" }}>
         <header style={{ marginBottom: "2px" }}>
-          <h1 style={{ margin: 0, color: "#e2e8f0", fontSize: "28px", lineHeight: 1.2 }}>
-            Space News
-          </h1>
+          <h1 style={{ margin: 0, color: "#e2e8f0", fontSize: "28px", lineHeight: 1.2 }}>Launches</h1>
           <p style={{ margin: "8px 0 0", color: "#9fb5d9", fontSize: "13px" }}>
-            Latest articles from Spaceflight News API
+            Upcoming rocket launches from Launch Library 2
           </p>
         </header>
 
@@ -249,17 +288,21 @@ export default function SpaceNewsPage() {
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gap: "14px",
-                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              }}
-            >
-              {articles.map((article) => (
-                <ArticleCard key={article.id || article.url} article={article} />
-              ))}
-            </div>
+            {launches.length === 0 ? (
+              <div style={{ color: "#cbd5e1", fontSize: "14px" }}>No upcoming launches found.</div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "14px",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                }}
+              >
+                {launches.map((launch) => (
+                  <LaunchCard key={launch.id || launch.url || launch.name} launch={launch} nowMs={nowMs} />
+                ))}
+              </div>
+            )}
 
             <div
               style={{
@@ -318,7 +361,7 @@ export default function SpaceNewsPage() {
           }}
         >
           <RocketLoader
-            label={loading ? "Rocket lift-off... loading articles" : "Rocket lift-off... loading page"}
+            label={loading ? "Rocket lift-off... loading launches" : "Rocket lift-off... loading page"}
           />
         </div>
       ) : null}

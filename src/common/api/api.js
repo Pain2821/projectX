@@ -2,23 +2,38 @@ import BASE_API_URL from "./baseApi";
 import { API_URLS } from "./apiUrls";
 
 const SPACE_NEWS_API_BASE = "https://api.spaceflightnewsapi.net/v4";
+const LAUNCH_LIBRARY_API_BASE = "https://ll.thespacedevs.com/2.2.0";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, options);
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    let detailMessage = "";
+
+    try {
+      const payload = await response.json();
+      if (typeof payload?.detail === "string") {
+        detailMessage = payload.detail;
+      } else if (typeof payload?.message === "string") {
+        detailMessage = payload.message;
+      }
+    } catch (_error) {
+      // Fallback to default message when response is not JSON.
+    }
+
+    const message = detailMessage || `Request failed with status ${response.status}`;
+    throw new Error(message);
   }
 
   return response.json();
 }
 
-async function fetchUnknown(url) {
-  const response = await fetch(url);
+async function fetchUnknown(url, options = {}) {
+  const response = await fetch(url, options);
 
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`);
@@ -99,37 +114,40 @@ function extractTleFromUnknown(value, fallbackName = "ISS") {
   return null;
 }
 
-export async function fetchIssLocation() {
-  return fetchJson(buildUrl(API_URLS.iss));
+export async function fetchIssLocation(options = {}) {
+  return fetchJson(buildUrl(API_URLS.iss), options);
 }
 
-export async function fetchSatelliteById(id) {
-  return fetchJson(buildUrl(API_URLS.satelliteById(id)));
+export async function fetchSatelliteById(id, options = {}) {
+  return fetchJson(buildUrl(API_URLS.satelliteById(id)), options);
 }
 
-export async function fetchSatellitesByIds(ids) {
-  return Promise.all(ids.map((id) => fetchSatelliteById(id)));
+export async function fetchSatellitesByIds(ids, options = {}) {
+  return Promise.all(ids.map((id) => fetchSatelliteById(id, options)));
 }
 
-export async function fetchIssTleData() {
+export async function fetchIssTleData(options = {}) {
   const paths = [API_URLS.tledata, API_URLS.tles];
   let lastError = null;
 
   for (const path of paths) {
     try {
-      const payload = await fetchUnknown(buildUrl(path));
+      const payload = await fetchUnknown(buildUrl(path), options);
       const tle = extractTleFromUnknown(payload, "ISS");
 
       if (tle) {
         return tle;
       }
     } catch (error) {
+      if (error?.name === "AbortError") {
+        throw error;
+      }
       lastError = error;
     }
   }
 
   try {
-    return await fetchCelestrakTle(25544, "ISS");
+    return await fetchCelestrakTle(25544, "ISS", options);
   } catch (error) {
     lastError = error;
   }
@@ -137,7 +155,7 @@ export async function fetchIssTleData() {
   throw lastError || new Error("Unable to load ISS TLE data.");
 }
 
-export async function fetchCelestrakTle(id, fallbackName) {
+export async function fetchCelestrakTle(id, fallbackName, options = {}) {
   const sourceUrl = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=TLE`;
   const fallbackProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(sourceUrl)}`;
 
@@ -146,7 +164,7 @@ export async function fetchCelestrakTle(id, fallbackName) {
 
   for (const url of urls) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, options);
 
       if (!response.ok) {
         throw new Error(`TLE request failed with status ${response.status}`);
@@ -161,6 +179,9 @@ export async function fetchCelestrakTle(id, fallbackName) {
 
       return tle;
     } catch (error) {
+      if (error?.name === "AbortError") {
+        throw error;
+      }
       lastError = error;
     }
   }
@@ -168,10 +189,30 @@ export async function fetchCelestrakTle(id, fallbackName) {
   throw lastError || new Error(`Unable to fetch TLE for ${fallbackName}.`);
 }
 
-export async function fetchSpaceNewsArticles(limit = 20) {
+export async function fetchSpaceNewsArticles(limit = 20, offset = 0, options = {}) {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 20;
-  const url = `${SPACE_NEWS_API_BASE}/articles/?limit=${safeLimit}`;
-  const payload = await fetchJson(url);
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const url = `${SPACE_NEWS_API_BASE}/articles/?limit=${safeLimit}&offset=${safeOffset}`;
+  const payload = await fetchJson(url, options);
 
-  return Array.isArray(payload?.results) ? payload.results : [];
+  return {
+    results: Array.isArray(payload?.results) ? payload.results : [],
+    count: payload?.count || 0,
+    next: payload?.next || null,
+    previous: payload?.previous || null,
+  };
+}
+
+export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}) {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 10;
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const url = `${LAUNCH_LIBRARY_API_BASE}/launch/upcoming/?limit=${safeLimit}&offset=${safeOffset}&format=json`;
+  const payload = await fetchJson(url, options);
+
+  return {
+    results: Array.isArray(payload?.results) ? payload.results : [],
+    count: payload?.count || 0,
+    next: payload?.next || null,
+    previous: payload?.previous || null,
+  };
 }

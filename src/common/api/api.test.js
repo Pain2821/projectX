@@ -24,7 +24,7 @@ describe("api layer", () => {
     const result = await fetchIssLocation();
 
     expect(result).toEqual(payload);
-    expect(global.fetch).toHaveBeenCalledWith(`${BASE_API_URL}${API_URLS.iss}`);
+    expect(global.fetch).toHaveBeenCalledWith(`${BASE_API_URL}${API_URLS.iss}`, {});
   });
 
   it("falls back from tledata to tles endpoint", async () => {
@@ -50,7 +50,7 @@ describe("api layer", () => {
       line1: "1 25544U TEST",
       line2: "2 25544 TEST",
     });
-    expect(global.fetch).toHaveBeenNthCalledWith(1, `${BASE_API_URL}${API_URLS.tledata}`);
-    expect(global.fetch).toHaveBeenNthCalledWith(2, `${BASE_API_URL}${API_URLS.tles}`);
+    expect(global.fetch).toHaveBeenNthCalledWith(1, `${BASE_API_URL}${API_URLS.tledata}`, {});
+    expect(global.fetch).toHaveBeenNthCalledWith(2, `${BASE_API_URL}${API_URLS.tles}`, {});
   });
 });

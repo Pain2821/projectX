@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { fetchIssTleData } from "../common/api";
 import { calculateNextIssPass, formatPassSummary } from "../common/hooks";
 
@@ -47,6 +47,14 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
   const [passMessage, setPassMessage] = useState("");
   const [passLoading, setPassLoading] = useState(false);
   const [passError, setPassError] = useState("");
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const handleNextPass = () => {
     if (!navigator.geolocation) {
@@ -62,6 +70,10 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
       async (geoPosition) => {
         try {
           const tle = await fetchIssTleData();
+          if (!isMountedRef.current) {
+            return;
+          }
+
           const pass = calculateNextIssPass({
             line1: tle.line1,
             line2: tle.line2,
@@ -70,16 +82,24 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
             heightMeters: geoPosition.coords.altitude || 0,
           });
 
-          setPassMessage(formatPassSummary(pass));
+          if (isMountedRef.current) {
+            setPassMessage(formatPassSummary(pass));
+          }
         } catch (calculationError) {
-          setPassError(calculationError.message || "Unable to calculate next ISS pass.");
+          if (isMountedRef.current) {
+            setPassError(calculationError.message || "Unable to calculate next ISS pass.");
+          }
         } finally {
-          setPassLoading(false);
+          if (isMountedRef.current) {
+            setPassLoading(false);
+          }
         }
       },
       (geoError) => {
-        setPassLoading(false);
-        setPassError(geoError.message || "Unable to access your location.");
+        if (isMountedRef.current) {
+          setPassLoading(false);
+          setPassError(geoError.message || "Unable to access your location.");
+        }
       },
       {
         enableHighAccuracy: false,

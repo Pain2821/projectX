@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchIssLocation } from "../common/api";
 import { IssContext } from "../common/context";
 
@@ -40,8 +40,17 @@ export function IssProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
+  const isMountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const pollTimerRef = useRef(null);
 
   const refresh = useCallback(async () => {
+    if (inFlightRef.current) {
+      return;
+    }
+
+    inFlightRef.current = true;
+
     try {
       const data = await fetchIssLocation();
       const nextPosition = {
@@ -52,6 +61,10 @@ export function IssProvider({ children }) {
         visibility: String(data.visibility || ""),
         timestamp: Number(data.timestamp || Date.now() / 1000) * 1000,
       };
+
+      if (!isMountedRef.current) {
+        return;
+      }
 
       setPosition(nextPosition);
       setHistory((prev) => {
@@ -75,17 +88,42 @@ export function IssProvider({ children }) {
       setLastUpdated(new Date(nextPosition.timestamp));
       setError("");
     } catch (err) {
-      setError(err.message || "Unable to load ISS location.");
+      if (isMountedRef.current) {
+        setError(err.message || "Unable to load ISS location.");
+      }
     } finally {
-      setLoading(false);
+      inFlightRef.current = false;
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    isMountedRef.current = true;
+    let disposed = false;
 
-    const intervalId = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => clearInterval(intervalId);
+    async function poll() {
+      if (disposed) {
+        return;
+      }
+
+      await refresh();
+
+      if (!disposed) {
+        pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    }
+
+    poll();
+
+    return () => {
+      disposed = true;
+      isMountedRef.current = false;
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+      }
+    };
   }, [refresh]);
 
   const contextValue = useMemo(

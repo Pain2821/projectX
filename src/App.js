@@ -1,7 +1,7 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import TopNav from "./components/TopNav";
-import { HomePage, LiveIssPage, SatellitesPage, SpaceNewsPage } from "./pages";
+import { HomePage, LaunchesPage, LiveIssPage, SatellitesPage, SpaceNewsPage } from "./pages";
 import AppWrapper, { IssProvider, ThemeProvider } from "./layouts/appWrapper";
 
 export default function App() {
@@ -22,6 +22,7 @@ export default function App() {
             />
             <Route path="/satellites" element={<SatellitesPage />} />
             <Route path="/news" element={<SpaceNewsPage />} />
+            <Route path="/launches" element={<LaunchesPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
