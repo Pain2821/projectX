@@ -22,13 +22,13 @@ function formatVisibility(value) {
   const normalized = String(value || "").toLowerCase();
 
   if (normalized === "eclipsed") {
-    return "🌑 In Earth's Shadow";
+    return "In Earth's Shadow";
   }
   if (normalized === "daylight") {
-    return "☀️ In Sunlight";
+    return "In Sunlight";
   }
   if (normalized === "uneclipsed") {
-    return "✨ Uneclipsed";
+    return "Uneclipsed";
   }
 
   return "--";

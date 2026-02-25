@@ -2,16 +2,15 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, TileLayer } from "react-leaflet";
 import { degreesLat, degreesLong, eciToGeodetic, gstime, propagate, twoline2satrec } from "satellite.js";
 import { fetchIvanTlePage } from "../common/api";
+import { ALTITUDE_BAND, ORBITAL_DEBRIS_CONFIG } from "../common/config";
 
-const CACHE_KEY = "orbital_debris_cache_v1";
-const RATE_LIMIT_KEY = "orbital_debris_rate_limit_v1";
-const PAGE_SIZE = 100;
-const MAX_PAGES = 280;
-const POSITION_REFRESH_MS = 4000;
-const FETCH_STEP_DELAY_MS = 120;
-const OFFICIAL_CATALOG_SIZE = 27000;
-const DEFAULT_COOLDOWN_MS = 10 * 60 * 1000;
-const CACHE_FRESH_MS = 15 * 60 * 1000;
+const CACHE_KEY = ORBITAL_DEBRIS_CONFIG.cacheKey;
+const RATE_LIMIT_KEY = ORBITAL_DEBRIS_CONFIG.rateLimitKey;
+const PAGE_SIZE = ORBITAL_DEBRIS_CONFIG.pageSize;
+const MAX_PAGES = ORBITAL_DEBRIS_CONFIG.maxPages;
+const FETCH_STEP_DELAY_MS = ORBITAL_DEBRIS_CONFIG.fetchStepDelayMs;
+const CACHE_FRESH_MS = ORBITAL_DEBRIS_CONFIG.cacheFreshMs;
+const DEFAULT_COOLDOWN_MS = ORBITAL_DEBRIS_CONFIG.defaultCooldownMs;
 
 function safeNumber(value, fallback = 0) {
   const next = Number(value);
@@ -20,21 +19,21 @@ function safeNumber(value, fallback = 0) {
 
 function classifyAltitude(altitudeKm) {
   if (altitudeKm < 1000) {
-    return "low";
+    return ALTITUDE_BAND.low;
   }
 
   if (altitudeKm <= 20000) {
-    return "mid";
+    return ALTITUDE_BAND.mid;
   }
 
-  return "high";
+  return ALTITUDE_BAND.high;
 }
 
 function colorByBand(band) {
-  if (band === "low") {
+  if (band === ALTITUDE_BAND.low) {
     return "#34d399";
   }
-  if (band === "mid") {
+  if (band === ALTITUDE_BAND.mid) {
     return "#facc15";
   }
   return "#ef4444";
@@ -136,29 +135,32 @@ function parseRetryAfter(error) {
 }
 
 function buildDebrisItems(rawItems) {
-  return rawItems
-    .map((item) => {
+  const byObjectId = new Map();
+
+  rawItems.forEach((item) => {
       const line1 = String(item?.line1 || "").trim();
       const line2 = String(item?.line2 || "").trim();
 
       if (!line1.startsWith("1 ") || !line2.startsWith("2 ")) {
-        return null;
+        return;
       }
 
       try {
-        return {
+        const objectId = String(item?.noradCatId || item?.satelliteId || item?.id || `${line1}_${line2}`);
+        byObjectId.set(objectId, {
           id: item?.satelliteId || item?.noradCatId || item?.id || `${line1}_${line2}`,
           name: item?.name || item?.satelliteName || "Unknown Object",
           noradCatId: item?.noradCatId || item?.satelliteId || null,
           line1,
           line2,
           satrec: twoline2satrec(line1, line2),
-        };
+        });
       } catch (_error) {
-        return null;
+        // Ignore malformed rows and continue.
       }
-    })
-    .filter(Boolean);
+    });
+
+  return Array.from(byObjectId.values());
 }
 
 function formatCountdown(ms) {
@@ -280,6 +282,9 @@ export default function OrbitalDebrisPage() {
         if (disposed) {
           return;
         }
+        if (requestError?.name === "AbortError") {
+          return;
+        }
 
         if (requestError?.status === 429) {
           const nextRetryAt = parseRetryAfter(requestError);
@@ -291,6 +296,8 @@ export default function OrbitalDebrisPage() {
             const hydrated = buildDebrisItems(cached.items);
             setDebrisItems(hydrated);
             setSourceLabel("Cached TLE data");
+            setLoading(false);
+          } else {
             setLoading(false);
           }
         } else {
@@ -307,7 +314,6 @@ export default function OrbitalDebrisPage() {
           setStreaming(false);
         }
       }
-
     }
 
     loadAllPages();
@@ -362,7 +368,7 @@ export default function OrbitalDebrisPage() {
     };
 
     update();
-    const interval = setInterval(update, POSITION_REFRESH_MS);
+    const interval = setInterval(update, ORBITAL_DEBRIS_CONFIG.positionRefreshMs);
 
     return () => {
       disposed = true;
@@ -376,9 +382,9 @@ export default function OrbitalDebrisPage() {
     let high = 0;
 
     points.forEach((point) => {
-      if (point.band === "low") {
+      if (point.band === ALTITUDE_BAND.low) {
         low += 1;
-      } else if (point.band === "mid") {
+      } else if (point.band === ALTITUDE_BAND.mid) {
         mid += 1;
       } else {
         high += 1;
@@ -465,7 +471,7 @@ export default function OrbitalDebrisPage() {
       >
         <div style={{ fontSize: "24px", fontWeight: 700, marginBottom: "4px" }}>Orbital Debris</div>
         <div style={{ color: "#cbd5e1", fontSize: "15px", marginBottom: "8px" }}>
-          Tracking {stats.total.toLocaleString()} objects of {OFFICIAL_CATALOG_SIZE.toLocaleString()}+
+          Tracking {stats.total.toLocaleString()} objects of {ORBITAL_DEBRIS_CONFIG.officialCatalogSize.toLocaleString()}+
           officially catalogued by US Space Surveillance Network
         </div>
         <div style={{ color: "#34d399", fontSize: "14px", marginBottom: "2px" }}>

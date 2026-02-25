@@ -1,13 +1,6 @@
 import BASE_API_URL from "./baseApi";
 import { API_URLS } from "./apiUrls";
-
-const SPACE_NEWS_API_BASE = "https://api.spaceflightnewsapi.net/v4";
-const LAUNCH_LIBRARY_API_BASE = "https://ll.thespacedevs.com/2.2.0";
-const NASA_INSIGHT_API_URL =
-  "https://api.nasa.gov/insight_weather/?api_key=DEMO_KEY&feedtype=json&ver=1.0";
-const NASA_EXOPLANET_API_URL =
-  "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+top+1500+pl_name,hostname,pl_rade,pl_bmasse,pl_orbper,disc_year,discoverymethod+from+pscomppars+where+pl_rade+is+not+null+and+pl_bmasse+is+not+null+order+by+disc_year+desc&format=json";
-const TLE_IVAN_API_BASE = "https://tle.ivanstanojevic.me/api/tle/";
+import { EXTERNAL_API } from "../config";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
@@ -218,7 +211,7 @@ export async function fetchCelestrakTle(id, fallbackName, options = {}) {
 export async function fetchSpaceNewsArticles(limit = 20, offset = 0, options = {}) {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 20;
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
-  const url = `${SPACE_NEWS_API_BASE}/articles/?limit=${safeLimit}&offset=${safeOffset}`;
+  const url = `${EXTERNAL_API.spaceNewsBase}/articles/?limit=${safeLimit}&offset=${safeOffset}`;
   const payload = await fetchJson(url, options);
 
   return {
@@ -232,7 +225,7 @@ export async function fetchSpaceNewsArticles(limit = 20, offset = 0, options = {
 export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}) {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 10;
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
-  const url = `${LAUNCH_LIBRARY_API_BASE}/launch/upcoming/?limit=${safeLimit}&offset=${safeOffset}&format=json`;
+  const url = `${EXTERNAL_API.launchLibraryBase}/launch/upcoming/?limit=${safeLimit}&offset=${safeOffset}&format=json`;
   const payload = await fetchJson(url, options);
 
   return {
@@ -244,15 +237,15 @@ export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}
 }
 
 export async function fetchMarsWeather(options = {}) {
-  return fetchJson(NASA_INSIGHT_API_URL, options);
+  return fetchJson(EXTERNAL_API.nasaInsightWeather, options);
 }
 
 export async function fetchExoplanets(options = {}) {
   const fallbackProxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(
-    NASA_EXOPLANET_API_URL
+    EXTERNAL_API.nasaExoplanets
   )}`;
-  const fallbackProxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(NASA_EXOPLANET_API_URL)}`;
-  const urls = [NASA_EXOPLANET_API_URL, fallbackProxyUrl1, fallbackProxyUrl2];
+  const fallbackProxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(EXTERNAL_API.nasaExoplanets)}`;
+  const urls = [EXTERNAL_API.nasaExoplanets, fallbackProxyUrl1, fallbackProxyUrl2];
   let lastError = null;
 
   for (const url of urls) {
@@ -277,7 +270,7 @@ export async function fetchIvanTlePage(page = 1, pageSize = 100, options = {}) {
   } else {
     const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
     const safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 100;
-    url = `${TLE_IVAN_API_BASE}?page=${safePage}&page-size=${safePageSize}`;
+    url = `${EXTERNAL_API.tleIvanBase}?page=${safePage}&page-size=${safePageSize}`;
   }
 
   const payload = await fetchJson(url, options);

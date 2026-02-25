@@ -127,6 +127,23 @@ function useChartData(rawData) {
 }
 
 function BubbleChart({ data, selectedId, onSelect }) {
+  if (!Array.isArray(data) || data.length === 0) {
+    return (
+      <div
+        style={{
+          borderRadius: "14px",
+          border: "1px solid rgba(124, 148, 183, 0.3)",
+          background: "rgba(5, 10, 22, 0.72)",
+          color: "#9fb5d9",
+          fontSize: "14px",
+          padding: "24px",
+        }}
+      >
+        No exoplanet records available for chart rendering.
+      </div>
+    );
+  }
+
   const width = 1060;
   const height = 560;
   const padding = { top: 30, right: 28, bottom: 64, left: 84 };
@@ -290,6 +307,7 @@ function BubbleChart({ data, selectedId, onSelect }) {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onDoubleClick={resetView}
       onMouseLeave={() => {
         handleMouseUp();
         setHoverState(null);

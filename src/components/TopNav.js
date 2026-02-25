@@ -1,5 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { TOP_NAV_ITEMS } from "../common/constants";
 
 export default function TopNav() {
   const linkStyle = ({ isActive }) => ({
@@ -29,27 +30,11 @@ export default function TopNav() {
         backdropFilter: "blur(8px)",
       }}
     >
-      <NavLink to="/liveiss" style={linkStyle}>
-        ISS Tracker
-      </NavLink>
-      <NavLink to="/satellites" style={linkStyle}>
-        Satellites
-      </NavLink>
-      <NavLink to="/news" style={linkStyle}>
-        Space News
-      </NavLink>
-      <NavLink to="/launches" style={linkStyle}>
-        Launches
-      </NavLink>
-      <NavLink to="/mars" style={linkStyle}>
-        Mars Weather
-      </NavLink>
-      <NavLink to="/exoplanets" style={linkStyle}>
-        Exoplanets
-      </NavLink>
-      <NavLink to="/debris" style={linkStyle}>
-        Orbital Debris
-      </NavLink>
+      {TOP_NAV_ITEMS.map((item) => (
+        <NavLink key={item.to} to={item.to} style={linkStyle}>
+          {item.label}
+        </NavLink>
+      ))}
     </nav>
   );
 }
