@@ -3,6 +3,8 @@ import { API_URLS } from "./apiUrls";
 
 const SPACE_NEWS_API_BASE = "https://api.spaceflightnewsapi.net/v4";
 const LAUNCH_LIBRARY_API_BASE = "https://ll.thespacedevs.com/2.2.0";
+const NASA_INSIGHT_API_URL =
+  "https://api.nasa.gov/insight_weather/?api_key=DEMO_KEY&feedtype=json&ver=1.0";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
@@ -215,4 +217,8 @@ export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}
     next: payload?.next || null,
     previous: payload?.previous || null,
   };
+}
+
+export async function fetchMarsWeather(options = {}) {
+  return fetchJson(NASA_INSIGHT_API_URL, options);
 }

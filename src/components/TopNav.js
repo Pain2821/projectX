@@ -41,6 +41,9 @@ export default function TopNav() {
       <NavLink to="/launches" style={linkStyle}>
         Launches
       </NavLink>
+      <NavLink to="/mars" style={linkStyle}>
+        Mars Weather
+      </NavLink>
     </nav>
   );
 }
