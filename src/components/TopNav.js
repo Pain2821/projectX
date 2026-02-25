@@ -35,6 +35,9 @@ export default function TopNav() {
       <NavLink to="/satellites" style={linkStyle}>
         Satellites
       </NavLink>
+      <NavLink to="/news" style={linkStyle}>
+        Space News
+      </NavLink>
     </nav>
   );
 }

@@ -1,6 +1,8 @@
 import BASE_API_URL from "./baseApi";
 import { API_URLS } from "./apiUrls";
 
+const SPACE_NEWS_API_BASE = "https://api.spaceflightnewsapi.net/v4";
+
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
 }
@@ -164,4 +166,12 @@ export async function fetchCelestrakTle(id, fallbackName) {
   }
 
   throw lastError || new Error(`Unable to fetch TLE for ${fallbackName}.`);
+}
+
+export async function fetchSpaceNewsArticles(limit = 20) {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 20;
+  const url = `${SPACE_NEWS_API_BASE}/articles/?limit=${safeLimit}`;
+  const payload = await fetchJson(url);
+
+  return Array.isArray(payload?.results) ? payload.results : [];
 }
