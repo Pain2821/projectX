@@ -1,6 +1,7 @@
-﻿import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import { Marker, Popup } from "react-leaflet";
+import { easeInOut, normalizeLongitude, shortestLongitudeDelta } from "../common/utils";
 
 const issIcon = L.divIcon({
   className: "iss-marker-icon",
@@ -24,36 +25,15 @@ const issIcon = L.divIcon({
   popupAnchor: [0, -14],
 });
 
-function shortestLongitudeDelta(fromLongitude, toLongitude) {
-  let delta = toLongitude - fromLongitude;
-
-  if (delta > 180) {
-    delta -= 360;
-  }
-  if (delta < -180) {
-    delta += 360;
-  }
-
-  return delta;
-}
-
-function normalizeLongitude(longitude) {
-  let value = longitude;
-
-  while (value > 180) {
-    value -= 360;
-  }
-  while (value < -180) {
-    value += 360;
-  }
-
-  return value;
-}
+const DEFAULT_ANIMATION_MS = 1000;
+const MIN_ANIMATION_MS = 350;
+const MAX_ANIMATION_MS = 1400;
 
 export default function IssMarker({ position }) {
   const markerRef = useRef(null);
   const animationFrameRef = useRef(null);
   const initialPositionRef = useRef(null);
+  const lastTimestampRef = useRef(null);
 
   const markerPosition = useMemo(() => {
     if (!position) {
@@ -77,9 +57,13 @@ export default function IssMarker({ position }) {
     const targetLatitude = position.latitude;
     const targetLongitude = position.longitude;
     const deltaLongitude = shortestLongitudeDelta(start.lng, targetLongitude);
-
-    const durationMs = 700;
+    const nextTimestamp = Number(position.timestamp) || Date.now();
+    const previousTimestamp = lastTimestampRef.current;
+    const rawDuration = previousTimestamp ? nextTimestamp - previousTimestamp : DEFAULT_ANIMATION_MS;
+    const durationMs = Math.min(MAX_ANIMATION_MS, Math.max(MIN_ANIMATION_MS, rawDuration));
     const startTime = performance.now();
+
+    lastTimestampRef.current = nextTimestamp;
 
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -87,8 +71,9 @@ export default function IssMarker({ position }) {
 
     const animate = (currentTime) => {
       const progress = Math.min((currentTime - startTime) / durationMs, 1);
-      const nextLatitude = start.lat + (targetLatitude - start.lat) * progress;
-      const nextLongitude = normalizeLongitude(start.lng + deltaLongitude * progress);
+      const easedProgress = easeInOut(progress);
+      const nextLatitude = start.lat + (targetLatitude - start.lat) * easedProgress;
+      const nextLongitude = normalizeLongitude(start.lng + deltaLongitude * easedProgress);
 
       marker.setLatLng([nextLatitude, nextLongitude]);
 

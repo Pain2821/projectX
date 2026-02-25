@@ -1,27 +1,12 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Polygon, Polyline } from "react-leaflet";
+import SunCalc from "suncalc";
+import { normalizeLongitude } from "../common/utils";
 
 const SHADOW_UPDATE_INTERVAL_MS = 60000;
 
-function normalizeLongitude(longitude) {
-  let value = longitude;
-
-  while (value > 180) {
-    value -= 360;
-  }
-  while (value < -180) {
-    value += 360;
-  }
-
-  return value;
-}
-
 function getSunAltitude(date, latitude, longitude) {
-  if (!window.SunCalc) {
-    return 0;
-  }
-
-  return window.SunCalc.getPosition(date, latitude, longitude).altitude;
+  return SunCalc.getPosition(date, latitude, longitude).altitude;
 }
 
 function findTerminatorLatitude(date, longitude) {
@@ -134,14 +119,6 @@ export default function DayNightOverlay() {
 
   const { wrappedNightPolygons, wrappedTerminatorLines } = useMemo(() => {
     const date = new Date(shadowTime);
-
-    if (!window.SunCalc) {
-      return {
-        wrappedNightPolygons: [],
-        wrappedTerminatorLines: [],
-      };
-    }
-
     const terminator = buildTerminatorLine(date);
     const antiSolarPoint = estimateAntiSolarPoint(date);
     const nightPolygon = buildNightPolygon(terminator, antiSolarPoint);

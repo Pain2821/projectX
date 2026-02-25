@@ -3,7 +3,7 @@ import { fetchIssLocation } from "../common/api";
 import { IssContext } from "../common/context";
 
 const POLL_INTERVAL_MS = 1000;
-const TRAIL_INTERVAL_MS = 5000;
+const TRAIL_INTERVAL_MS = 1000;
 const MAX_HISTORY_POINTS = 80;
 
 export function ThemeProvider({ children }) {

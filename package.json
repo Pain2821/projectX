@@ -15,7 +15,8 @@
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.30.3",
     "react-scripts": "^5.0.1",
-    "satellite.js": "^6.0.2"
+    "satellite.js": "^6.0.2",
+    "suncalc": "^1.9.0"
   },
   "browserslist": {
     "production": [

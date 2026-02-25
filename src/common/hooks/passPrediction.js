@@ -1,6 +1,4 @@
-﻿import {
-  degreesLat,
-  degreesLong,
+import {
   ecfToLookAngles,
   eciToEcf,
   gstime,
@@ -8,7 +6,6 @@
   twoline2satrec,
 } from "satellite.js";
 
-const EARTH_RADIUS_KM = 6371;
 const STEP_SECONDS = 20;
 const SEARCH_HOURS = 48;
 const MIN_ELEVATION_DEGREES = 10;
@@ -179,3 +176,4 @@ export function formatPassSummary(passResult) {
 
   return `ISS will pass over your location on ${dateText} at ${timeText}, visible for approximately ${passResult.durationMinutes} minutes at max elevation ${maxElevationText} degrees`;
 }
+
