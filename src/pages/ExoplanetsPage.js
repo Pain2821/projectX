@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fetchExoplanets } from "../common/api";
 import RocketLoader from "../components/RocketLoader";
 
@@ -18,6 +18,84 @@ function formatNumber(value, digits = 2) {
   }
 
   return value.toFixed(digits);
+}
+
+function formatAxisTick(value) {
+  if (value >= 1000) {
+    return `${Math.round(value)}`;
+  }
+  if (value >= 10) {
+    return `${Math.round(value)}`;
+  }
+  if (value >= 1) {
+    return value.toFixed(1).replace(/\.0$/, "");
+  }
+  return value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function hashSeed(input) {
+  let hash = 0;
+  const text = String(input || "");
+
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash << 5) - hash + text.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return Math.abs(hash);
+}
+
+function jitterOffset(id, axis) {
+  const seed = hashSeed(`${id}-${axis}`);
+  return (seed % 1000) / 1000 - 0.5;
+}
+
+function clampDomain(min, max, globalMin, globalMax, minSpan) {
+  const globalSpan = globalMax - globalMin;
+  let nextMin = min;
+  let nextMax = max;
+  let span = nextMax - nextMin;
+
+  if (span < minSpan) {
+    const center = (nextMin + nextMax) / 2;
+    nextMin = center - minSpan / 2;
+    nextMax = center + minSpan / 2;
+    span = minSpan;
+  }
+
+  if (span > globalSpan) {
+    return [globalMin, globalMax];
+  }
+
+  if (nextMin < globalMin) {
+    nextMax += globalMin - nextMin;
+    nextMin = globalMin;
+  }
+  if (nextMax > globalMax) {
+    nextMin -= nextMax - globalMax;
+    nextMax = globalMax;
+  }
+
+  return [nextMin, nextMax];
+}
+
+function buildLogTicks(domainMin, domainMax) {
+  const ticks = [];
+  const startPower = Math.floor(domainMin) - 1;
+  const endPower = Math.ceil(domainMax) + 1;
+  const multipliers = [1, 2, 5];
+
+  for (let power = startPower; power <= endPower; power += 1) {
+    for (const m of multipliers) {
+      const value = m * Math.pow(10, power);
+      const logValue = Math.log10(value);
+      if (logValue >= domainMin && logValue <= domainMax) {
+        ticks.push(value);
+      }
+    }
+  }
+
+  return Array.from(new Set(ticks)).sort((a, b) => a - b);
 }
 
 function useChartData(rawData) {
@@ -59,19 +137,27 @@ function BubbleChart({ data, selectedId, onSelect }) {
   const yMax = Math.max(...data.map((d) => Math.log10(d.massEarth)));
   const rMin = Math.min(...data.map((d) => d.radiusEarth));
   const rMax = Math.max(...data.map((d) => d.radiusEarth));
+  const svgRef = useRef(null);
+  const [viewDomain, setViewDomain] = useState({ xMin, xMax, yMin, yMax });
+  const [dragState, setDragState] = useState(null);
+  const [hoverState, setHoverState] = useState(null);
+
+  useEffect(() => {
+    setViewDomain({ xMin, xMax, yMin, yMax });
+  }, [xMin, xMax, yMin, yMax]);
 
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
 
   const xAt = (value) => {
     const v = Math.log10(value);
-    const t = (v - xMin) / Math.max(0.0001, xMax - xMin);
+    const t = (v - viewDomain.xMin) / Math.max(0.0001, viewDomain.xMax - viewDomain.xMin);
     return padding.left + t * plotWidth;
   };
 
   const yAt = (value) => {
     const v = Math.log10(value);
-    const t = (v - yMin) / Math.max(0.0001, yMax - yMin);
+    const t = (v - viewDomain.yMin) / Math.max(0.0001, viewDomain.yMax - viewDomain.yMin);
     return height - padding.bottom - t * plotHeight;
   };
 
@@ -80,15 +166,114 @@ function BubbleChart({ data, selectedId, onSelect }) {
     return 4 + t * 20;
   };
 
-  const xTicks = [0.1, 1, 10, 100, 1000].filter(
-    (tick) => tick >= Math.pow(10, xMin) && tick <= Math.pow(10, xMax)
-  );
-  const yTicks = [0.1, 1, 10, 100, 1000, 10000].filter(
-    (tick) => tick >= Math.pow(10, yMin) && tick <= Math.pow(10, yMax)
-  );
+  const xTicks = buildLogTicks(viewDomain.xMin, viewDomain.xMax);
+  const yTicks = buildLogTicks(viewDomain.yMin, viewDomain.yMax);
+
+  function updateHover(item, event) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    setHoverState({
+      item,
+      left: event.clientX - rect.left + 12,
+      top: event.clientY - rect.top - 12,
+    });
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    const px = ((event.clientX - rect.left) / rect.width) * width;
+    const py = ((event.clientY - rect.top) / rect.height) * height;
+    if (px < padding.left || px > width - padding.right || py < padding.top || py > height - padding.bottom) {
+      return;
+    }
+
+    const zoomFactor = event.deltaY > 0 ? 1.12 : 0.88;
+    const xSpan = viewDomain.xMax - viewDomain.xMin;
+    const ySpan = viewDomain.yMax - viewDomain.yMin;
+    const xAnchor = viewDomain.xMin + ((px - padding.left) / plotWidth) * xSpan;
+    const yAnchor = viewDomain.yMax - ((py - padding.top) / plotHeight) * ySpan;
+
+    const nextXMin = xAnchor + (viewDomain.xMin - xAnchor) * zoomFactor;
+    const nextXMax = xAnchor + (viewDomain.xMax - xAnchor) * zoomFactor;
+    const nextYMin = yAnchor + (viewDomain.yMin - yAnchor) * zoomFactor;
+    const nextYMax = yAnchor + (viewDomain.yMax - yAnchor) * zoomFactor;
+
+    const [clampedXMin, clampedXMax] = clampDomain(nextXMin, nextXMax, xMin, xMax, 0.2);
+    const [clampedYMin, clampedYMax] = clampDomain(nextYMin, nextYMax, yMin, yMax, 0.2);
+
+    setViewDomain({
+      xMin: clampedXMin,
+      xMax: clampedXMax,
+      yMin: clampedYMin,
+      yMax: clampedYMax,
+    });
+  }
+
+  function handleMouseDown(event) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    const px = ((event.clientX - rect.left) / rect.width) * width;
+    const py = ((event.clientY - rect.top) / rect.height) * height;
+    if (px < padding.left || px > width - padding.right || py < padding.top || py > height - padding.bottom) {
+      return;
+    }
+
+    setDragState({
+      startX: event.clientX,
+      startY: event.clientY,
+      xMin: viewDomain.xMin,
+      xMax: viewDomain.xMax,
+      yMin: viewDomain.yMin,
+      yMax: viewDomain.yMax,
+    });
+  }
+
+  function handleMouseMove(event) {
+    if (!dragState) {
+      return;
+    }
+
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    const xSpan = dragState.xMax - dragState.xMin;
+    const ySpan = dragState.yMax - dragState.yMin;
+    const shiftedXMin = dragState.xMin - (dx / plotWidth) * xSpan;
+    const shiftedXMax = dragState.xMax - (dx / plotWidth) * xSpan;
+    const shiftedYMin = dragState.yMin + (dy / plotHeight) * ySpan;
+    const shiftedYMax = dragState.yMax + (dy / plotHeight) * ySpan;
+    const [clampedXMin, clampedXMax] = clampDomain(shiftedXMin, shiftedXMax, xMin, xMax, 0.2);
+    const [clampedYMin, clampedYMax] = clampDomain(shiftedYMin, shiftedYMax, yMin, yMax, 0.2);
+
+    setViewDomain({
+      xMin: clampedXMin,
+      xMax: clampedXMax,
+      yMin: clampedYMin,
+      yMax: clampedYMax,
+    });
+  }
+
+  function handleMouseUp() {
+    setDragState(null);
+  }
+
+  const resetView = () => {
+    setViewDomain({ xMin, xMax, yMin, yMax });
+  };
 
   return (
-    <svg
+    <div style={{ position: "relative" }}>
+      <svg
+      ref={svgRef}
       viewBox={`0 0 ${width} ${height}`}
       style={{
         width: "100%",
@@ -97,10 +282,29 @@ function BubbleChart({ data, selectedId, onSelect }) {
         border: "1px solid rgba(148, 163, 184, 0.22)",
         background:
           "radial-gradient(circle at 18% 12%, rgba(22, 53, 104, 0.35) 0%, rgba(4, 10, 24, 0.92) 46%, rgba(2, 6, 16, 1) 100%)",
+        cursor: dragState ? "grabbing" : "grab",
       }}
       role="img"
       aria-label="Exoplanets bubble chart"
+      onWheel={handleWheel}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={() => {
+        handleMouseUp();
+        setHoverState(null);
+      }}
     >
+      <defs>
+        <clipPath id="exoplanetPlotClip">
+          <rect
+            x={padding.left}
+            y={padding.top}
+            width={plotWidth}
+            height={plotHeight}
+          />
+        </clipPath>
+      </defs>
       {xTicks.map((tick) => (
         <g key={`x-${tick}`}>
           <line
@@ -111,7 +315,7 @@ function BubbleChart({ data, selectedId, onSelect }) {
             stroke="rgba(148, 163, 184, 0.15)"
           />
           <text x={xAt(tick)} y={height - padding.bottom + 22} textAnchor="middle" fill="#cbd5e1" fontSize="12">
-            {tick}
+            {formatAxisTick(tick)}
           </text>
         </g>
       ))}
@@ -125,20 +329,25 @@ function BubbleChart({ data, selectedId, onSelect }) {
             stroke="rgba(148, 163, 184, 0.15)"
           />
           <text x={padding.left - 8} y={yAt(tick) + 4} textAnchor="end" fill="#cbd5e1" fontSize="12">
-            {tick}
+            {formatAxisTick(tick)}
           </text>
         </g>
       ))}
 
+      <g clipPath="url(#exoplanetPlotClip)">
       {data.map((item) => {
         const selected = selectedId === item.id;
         const color = DISCOVERY_COLORS[item.discoveryMethod] || "#38bdf8";
+        const jitterX = jitterOffset(item.id, "x") * 8;
+        const jitterY = jitterOffset(item.id, "y") * 8;
+        const cx = xAt(item.orbitalPeriod) + jitterX;
+        const cy = yAt(item.massEarth) + jitterY;
 
         return (
           <circle
             key={item.id}
-            cx={xAt(item.orbitalPeriod)}
-            cy={yAt(item.massEarth)}
+            cx={cx}
+            cy={cy}
             r={rAt(item.radiusEarth)}
             fill={color}
             fillOpacity={selected ? 0.95 : 0.68}
@@ -146,9 +355,13 @@ function BubbleChart({ data, selectedId, onSelect }) {
             strokeWidth={selected ? 2 : 1}
             style={{ cursor: "pointer" }}
             onClick={() => onSelect(item)}
+            onMouseEnter={(event) => updateHover(item, event)}
+            onMouseMove={(event) => updateHover(item, event)}
+            onMouseLeave={() => setHoverState(null)}
           />
         );
       })}
+      </g>
 
       <text x={width / 2} y={height - 16} textAnchor="middle" fill="#e2e8f0" fontSize="13">
         Orbital Period (days, log scale)
@@ -163,7 +376,60 @@ function BubbleChart({ data, selectedId, onSelect }) {
       >
         Planet Mass (Earth masses, log scale)
       </text>
-    </svg>
+      <text x={width - padding.right} y={18} textAnchor="end" fill="#9fb5d9" fontSize="12">
+        Drag to pan | Scroll to zoom | Double-click reset
+      </text>
+      <rect
+        x={width - padding.right - 98}
+        y={24}
+        width={90}
+        height={24}
+        rx={6}
+        fill="rgba(8, 23, 44, 0.8)"
+        stroke="rgba(148, 163, 184, 0.45)"
+        onClick={resetView}
+        onDoubleClick={resetView}
+        style={{ cursor: "pointer" }}
+      />
+      <text
+        x={width - padding.right - 53}
+        y={40}
+        textAnchor="middle"
+        fill="#e2e8f0"
+        fontSize="12"
+        style={{ pointerEvents: "none" }}
+      >
+        Reset View
+      </text>
+      </svg>
+      {hoverState ? (
+        <div
+          style={{
+            position: "absolute",
+            left: `${Math.min(hoverState.left, 760)}px`,
+            top: `${Math.max(hoverState.top, 8)}px`,
+            pointerEvents: "none",
+            background: "rgba(3, 10, 24, 0.94)",
+            border: "1px solid rgba(148, 163, 184, 0.45)",
+            borderRadius: "10px",
+            padding: "8px 10px",
+            color: "#e2e8f0",
+            fontSize: "12px",
+            display: "grid",
+            gap: "3px",
+            minWidth: "230px",
+            boxShadow: "0 6px 22px rgba(0, 0, 0, 0.35)",
+          }}
+        >
+          <strong style={{ fontSize: "13px" }}>{hoverState.item.planetName}</strong>
+          <div>Host: {hoverState.item.hostName}</div>
+          <div>Mass: {formatNumber(hoverState.item.massEarth)} Earth masses</div>
+          <div>Radius: {formatNumber(hoverState.item.radiusEarth)} Earth radii</div>
+          <div>Period: {formatNumber(hoverState.item.orbitalPeriod)} days</div>
+          <div>Discovery Year: {hoverState.item.discoveryYear || "--"}</div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
