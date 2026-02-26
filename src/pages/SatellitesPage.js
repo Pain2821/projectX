@@ -202,6 +202,7 @@ export default function SatellitesPage() {
           position: "absolute",
           right: "16px",
           bottom: "16px",
+          left: "16px",
           zIndex: 1200,
           border: "1px solid rgba(124, 148, 183, 0.35)",
           borderRadius: "12px",
@@ -211,7 +212,8 @@ export default function SatellitesPage() {
           display: "flex",
           flexDirection: "column",
           gap: "6px",
-          minWidth: "230px",
+          width: "min(260px, calc(100vw - 32px))",
+          boxSizing: "border-box",
         }}
       >
         <strong style={{ color: "#dbeafe", fontSize: "13px" }}>Satellite Legend</strong>

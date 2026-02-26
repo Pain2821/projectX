@@ -288,7 +288,7 @@ function BubbleChart({ data, selectedId, onSelect }) {
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <svg
       ref={svgRef}
       viewBox={`0 0 ${width} ${height}`}
@@ -435,8 +435,9 @@ function BubbleChart({ data, selectedId, onSelect }) {
             fontSize: "12px",
             display: "grid",
             gap: "3px",
-            minWidth: "230px",
+            width: "min(230px, calc(100vw - 40px))",
             boxShadow: "0 6px 22px rgba(0, 0, 0, 0.35)",
+            boxSizing: "border-box",
           }}
         >
           <strong style={{ fontSize: "13px" }}>{hoverState.item.planetName}</strong>
@@ -541,7 +542,8 @@ export default function ExoplanetsPage() {
         position: "fixed",
         inset: 0,
         overflowY: "auto",
-        padding: "86px 16px 20px",
+        padding: "86px max(12px, env(safe-area-inset-right)) 20px max(12px, env(safe-area-inset-left))",
+        boxSizing: "border-box",
       }}
     >
       <div style={{ maxWidth: "1120px", margin: "0 auto", display: "grid", gap: "14px" }}>

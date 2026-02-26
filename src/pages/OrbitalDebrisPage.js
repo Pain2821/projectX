@@ -408,7 +408,7 @@ export default function OrbitalDebrisPage() {
         position: "fixed",
         inset: 0,
         width: "100%",
-        height: "100vh",
+        height: "100dvh",
         background: "#05080f",
       }}
     >
@@ -425,7 +425,7 @@ export default function OrbitalDebrisPage() {
         worldCopyJump={false}
         style={{
           width: "100%",
-          height: "100vh",
+          height: "100dvh",
         }}
       >
         <TileLayer
@@ -458,15 +458,19 @@ export default function OrbitalDebrisPage() {
           position: "fixed",
           top: "72px",
           right: "16px",
+          left: "16px",
           zIndex: 1300,
-          minWidth: "340px",
+          width: "min(420px, calc(100vw - 32px))",
           maxWidth: "480px",
+          maxHeight: "calc(100dvh - 96px)",
+          overflowY: "auto",
           border: "1px solid rgba(124, 148, 183, 0.3)",
           borderRadius: "12px",
           padding: "12px 14px",
           background: "linear-gradient(145deg, rgba(5, 9, 20, 0.9), rgba(8, 16, 34, 0.75))",
           backdropFilter: "blur(8px)",
           color: "#dbeafe",
+          boxSizing: "border-box",
         }}
       >
         <div style={{ fontSize: "24px", fontWeight: 700, marginBottom: "4px" }}>Orbital Debris</div>

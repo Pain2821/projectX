@@ -136,7 +136,8 @@ export default function SpaceNewsPage() {
         position: "fixed",
         inset: 0,
         overflowY: "auto",
-        padding: "86px 16px 20px",
+        padding: "86px max(12px, env(safe-area-inset-right)) 20px max(12px, env(safe-area-inset-left))",
+        boxSizing: "border-box",
       }}
     >
       <div style={{ maxWidth: "1120px", margin: "0 auto", display: "grid", gap: "14px" }}>
@@ -253,7 +254,7 @@ export default function SpaceNewsPage() {
               style={{
                 display: "grid",
                 gap: "14px",
-                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
               }}
             >
               {articles.map((article) => (

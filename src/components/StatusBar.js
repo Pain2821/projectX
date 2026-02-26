@@ -114,6 +114,7 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
       style={{
         position: "absolute",
         left: "16px",
+        right: "16px",
         bottom: "16px",
         zIndex: 1000,
         border: "1px solid rgba(124, 148, 183, 0.35)",
@@ -124,9 +125,10 @@ export default function StatusBar({ position, lastUpdated, loading, error }) {
         display: "flex",
         flexDirection: "column",
         gap: "6px",
-        minWidth: "220px",
+        width: "min(420px, calc(100vw - 32px))",
         maxWidth: "420px",
         boxShadow: "0 8px 22px rgba(0, 0, 0, 0.35)",
+        boxSizing: "border-box",
       }}
     >
       <StatItem label="LAT" value={formatCoordinate(position?.latitude)} />

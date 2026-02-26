@@ -21,9 +21,10 @@ export function ThemeProvider({ children }) {
   return (
     <div
       style={{
-        height: "100vh",
-        width: "100vw",
-        overflow: "hidden",
+        minHeight: "100dvh",
+        width: "100%",
+        overflowX: "hidden",
+        overflowY: "hidden",
         background: theme.colors.background,
         color: theme.colors.text,
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
@@ -145,8 +146,8 @@ export default function AppWrapper({ children }) {
   return (
     <main
       style={{
-        height: "100vh",
-        width: "100vw",
+        minHeight: "100dvh",
+        width: "100%",
         margin: 0,
         padding: 0,
       }}

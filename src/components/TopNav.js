@@ -11,15 +11,17 @@ export default function TopNav() {
     borderRadius: "8px",
     background: isActive ? "rgba(56, 189, 248, 0.2)" : "transparent",
     border: isActive ? "1px solid rgba(56, 189, 248, 0.45)" : "1px solid transparent",
+    whiteSpace: "nowrap",
+    flex: "0 0 auto",
   });
 
   return (
     <nav
       style={{
         position: "fixed",
-        top: "12px",
-        left: "50%",
-        transform: "translateX(-50%)",
+        top: "max(8px, env(safe-area-inset-top))",
+        left: "12px",
+        right: "12px",
         zIndex: 1400,
         display: "flex",
         gap: "8px",
@@ -28,6 +30,10 @@ export default function TopNav() {
         border: "1px solid rgba(124, 148, 183, 0.35)",
         backgroundColor: "rgba(6, 10, 20, 0.68)",
         backdropFilter: "blur(8px)",
+        overflowX: "auto",
+        overflowY: "hidden",
+        WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "thin",
       }}
     >
       {TOP_NAV_ITEMS.map((item) => (

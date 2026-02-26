@@ -11,8 +11,9 @@ export default function HomePage() {
     background: "rgba(8, 23, 44, 0.85)",
     color: "#e2e8f0",
     fontSize: "14px",
-    minWidth: "180px",
+    width: "100%",
     textAlign: "center",
+    boxSizing: "border-box",
   };
 
   return (
@@ -22,6 +23,8 @@ export default function HomePage() {
         inset: 0,
         display: "grid",
         placeItems: "center",
+        padding: "84px 12px 12px",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -33,7 +36,8 @@ export default function HomePage() {
           display: "flex",
           flexDirection: "column",
           gap: "12px",
-          minWidth: "260px",
+          width: "min(320px, 100%)",
+          boxSizing: "border-box",
         }}
       >
         <Link to="/liveiss" style={buttonStyle}>
