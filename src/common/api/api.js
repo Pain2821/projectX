@@ -210,6 +210,28 @@ export async function fetchExoplanets(options = {}) {
   return fetchJson(buildUrl(API_URLS.exoplanets), options);
 }
 
+export async function fetchCatalog({ type, source, limit = 100, offset = 0 } = {}, options = {}) {
+  const payload = await fetchJson(
+    buildUrl(
+      API_URLS.CATALOG_URL({
+        type,
+        source,
+        limit,
+        offset,
+      })
+    ),
+    options
+  );
+
+  return {
+    data: Array.isArray(payload?.data) ? payload.data : [],
+    total: Number.isFinite(payload?.total) ? payload.total : 0,
+    sourceMix: payload?.source_mix || {},
+    cacheAge: payload?.cache_age ?? null,
+    stale: Boolean(payload?.stale),
+  };
+}
+
 export async function fetchIvanTlePage(page = 1, pageSize = 100, options = {}) {
   let safePage = 1;
   let safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 100;

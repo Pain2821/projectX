@@ -1,34 +1,113 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { fetchUpcomingLaunches } from "../../common/api";
 import WidgetCard from "./WidgetCard";
 
+const LAUNCH_REFRESH_MS = 60000;
+
+function toValidDate(value) {
+  const ts = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function formatCountdown(targetTs, nowTs) {
+  if (!Number.isFinite(targetTs)) {
+    return { h: "--", m: "--", s: "--" };
+  }
+
+  const delta = Math.max(0, targetTs - nowTs);
+  const totalSeconds = Math.floor(delta / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return {
+    h: String(hours).padStart(2, "0"),
+    m: String(minutes).padStart(2, "0"),
+    s: String(seconds).padStart(2, "0"),
+  };
+}
+
+function pickNextLaunch(results) {
+  const items = Array.isArray(results) ? results : [];
+  const now = Date.now();
+
+  const sorted = items
+    .map((item) => ({ item, ts: toValidDate(item?.net) }))
+    .filter((entry) => Number.isFinite(entry.ts))
+    .sort((a, b) => a.ts - b.ts);
+
+  return sorted.find((entry) => entry.ts >= now)?.item || sorted[0]?.item || null;
+}
+
+function getRocketName(launch) {
+  return (
+    launch?.rocket?.configuration?.full_name ||
+    launch?.rocket?.configuration?.name ||
+    launch?.rocket?.launcher_stage?.launcher?.configuration?.full_name ||
+    launch?.name ||
+    "Unknown rocket"
+  );
+}
+
+function getProviderName(launch) {
+  return launch?.launch_service_provider?.name || "Unknown provider";
+}
+
+function getPadName(launch) {
+  return launch?.pad?.name || launch?.pad?.location?.name || "Unknown pad";
+}
+
 export default function LaunchCountdownCard() {
-  const [countdown, setCountdown] = useState({ h: 2, m: 14, s: 22 });
+  const [nextLaunch, setNextLaunch] = useState(null);
+  const [nowTs, setNowTs] = useState(Date.now());
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        let { h, m, s } = prev;
-        s -= 1;
-        if (s < 0) { s = 59; m -= 1; }
-        if (m < 0) { m = 59; h -= 1; }
-        if (h < 0) { h = 23; m = 59; s = 59; }
-        return { h, m, s };
-      });
-    }, 1000);
+    let disposed = false;
+
+    async function loadLaunches() {
+      try {
+        const payload = await fetchUpcomingLaunches(10, 0);
+        const launch = pickNextLaunch(payload?.results);
+        if (!disposed) {
+          setNextLaunch(launch);
+        }
+      } catch (_error) {
+        if (!disposed) {
+          setNextLaunch(null);
+        }
+      }
+    }
+
+    loadLaunches();
+    const refreshId = setInterval(loadLaunches, LAUNCH_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      clearInterval(refreshId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const pad = (n) => String(n).padStart(2, "0");
+  const targetTs = toValidDate(nextLaunch?.net);
+  const countdown = useMemo(() => formatCountdown(targetTs, nowTs), [targetTs, nowTs]);
+
+  const missionName = nextLaunch?.mission?.name || nextLaunch?.name || "Upcoming launch";
+  const rocketName = getRocketName(nextLaunch);
+  const providerName = getProviderName(nextLaunch);
+  const padName = getPadName(nextLaunch);
 
   return (
     <WidgetCard
       title="Next Launch"
-      icon="🚀"
+      icon="LCH"
       ctaText="View All"
       ctaTo="/launches"
       accentColor="var(--accent-orange, #fb923c)"
     >
-      {/* Rocket Visual */}
       <div
         style={{
           textAlign: "center",
@@ -43,11 +122,10 @@ export default function LaunchCountdownCard() {
             filter: "drop-shadow(0 0 20px rgba(251,146,60,0.3))",
           }}
         >
-          🚀
+          ^
         </div>
       </div>
 
-      {/* Countdown */}
       <div
         style={{
           display: "flex",
@@ -57,9 +135,9 @@ export default function LaunchCountdownCard() {
         }}
       >
         {[
-          { val: pad(countdown.h), label: "HRS" },
-          { val: pad(countdown.m), label: "MIN" },
-          { val: pad(countdown.s), label: "SEC" },
+          { val: countdown.h, label: "HRS" },
+          { val: countdown.m, label: "MIN" },
+          { val: countdown.s, label: "SEC" },
         ].map((unit, i) => (
           <React.Fragment key={unit.label}>
             {i > 0 && (
@@ -106,7 +184,6 @@ export default function LaunchCountdownCard() {
         ))}
       </div>
 
-      {/* Mission Info */}
       <div
         style={{
           background: "rgba(5,7,13,0.5)",
@@ -123,7 +200,7 @@ export default function LaunchCountdownCard() {
             marginBottom: "4px",
           }}
         >
-          Falcon 9 — Starlink Group 12-5
+          {missionName}
         </div>
         <div
           style={{
@@ -131,12 +208,15 @@ export default function LaunchCountdownCard() {
             color: "var(--text-secondary, #9aa4b2)",
             display: "flex",
             gap: "12px",
+            flexWrap: "wrap",
           }}
         >
-          <span>📍 Cape Canaveral</span>
-          <span>🏢 SpaceX</span>
+          <span>{padName}</span>
+          <span>{providerName}</span>
+          <span>{rocketName}</span>
         </div>
       </div>
     </WidgetCard>
   );
 }
+

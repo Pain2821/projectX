@@ -1,19 +1,37 @@
-import React from "react";
+﻿import React, { useEffect, useState } from "react";
+import { fetchCatalog } from "../../common/api";
 import WidgetCard from "./WidgetCard";
 
 export default function DebrisCard() {
-  const trackedObjects = 29483;
-  const riskEvents = 12;
+  const [trackedObjects, setTrackedObjects] = useState(null);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadDebrisCount() {
+      try {
+        const payload = await fetchCatalog({ type: "DEBRIS", limit: 1, offset: 0 });
+        if (!disposed) {
+          setTrackedObjects(payload.total);
+        }
+      } catch (_error) {
+        if (!disposed) {
+          setTrackedObjects(null);
+        }
+      }
+    }
+
+    loadDebrisCount();
+  }, []);
 
   return (
     <WidgetCard
       title="Orbital Debris"
-      icon="💫"
+      icon="DEB"
       ctaText="View Map"
       ctaTo="/debris"
       accentColor="var(--danger, #f87171)"
     >
-      {/* Debris Visualization */}
       <div
         style={{
           position: "relative",
@@ -25,7 +43,6 @@ export default function DebrisCard() {
           marginBottom: "16px",
         }}
       >
-        {/* Earth */}
         <div
           style={{
             width: "80px",
@@ -38,7 +55,6 @@ export default function DebrisCard() {
           }}
         />
 
-        {/* Debris orbits */}
         {[100, 115, 128].map((size, i) => (
           <div
             key={i}
@@ -51,7 +67,6 @@ export default function DebrisCard() {
               animation: `orbit-rotate ${12 + i * 5}s linear infinite ${i % 2 === 0 ? "" : "reverse"}`,
             }}
           >
-            {/* Debris dots */}
             {[...Array(3 + i)].map((_, j) => (
               <div
                 key={j}
@@ -71,7 +86,6 @@ export default function DebrisCard() {
         ))}
       </div>
 
-      {/* Stats */}
       <div
         style={{
           display: "flex",
@@ -96,10 +110,10 @@ export default function DebrisCard() {
               color: "#f87171",
             }}
           >
-            {trackedObjects.toLocaleString()}
+            {Number.isFinite(trackedObjects) ? trackedObjects.toLocaleString() : "--"}
           </div>
           <div style={{ fontSize: "11px", color: "var(--text-muted, #5a6577)" }}>
-            Tracked Objects
+            Tracked Debris
           </div>
         </div>
         <div
@@ -120,10 +134,10 @@ export default function DebrisCard() {
               color: "#fbbf24",
             }}
           >
-            {riskEvents}
+            Live
           </div>
           <div style={{ fontSize: "11px", color: "var(--text-muted, #5a6577)" }}>
-            Close Approaches / 24h
+            Catalog Source
           </div>
         </div>
       </div>

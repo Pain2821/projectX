@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, TileLayer } from "react-leaflet";
 import { degreesLat, degreesLong, eciToGeodetic, gstime, propagate, twoline2satrec } from "satellite.js";
-import { fetchIvanTlePage } from "../common/api";
+import { fetchCatalog, fetchIvanTlePage } from "../common/api";
 import { ALTITUDE_BAND, ORBITAL_DEBRIS_CONFIG } from "../common/config";
+import DataStatus from "../components/common/DataStatus";
 
 const CACHE_KEY = ORBITAL_DEBRIS_CONFIG.cacheKey;
 const RATE_LIMIT_KEY = ORBITAL_DEBRIS_CONFIG.rateLimitKey;
@@ -138,27 +139,29 @@ function buildDebrisItems(rawItems) {
   const byObjectId = new Map();
 
   rawItems.forEach((item) => {
-      const line1 = String(item?.line1 || "").trim();
-      const line2 = String(item?.line2 || "").trim();
+    const line1 = String(item?.line1 || item?.tle?.line1 || "").trim();
+    const line2 = String(item?.line2 || item?.tle?.line2 || "").trim();
 
-      if (!line1.startsWith("1 ") || !line2.startsWith("2 ")) {
-        return;
-      }
+    if (!line1.startsWith("1 ") || !line2.startsWith("2 ")) {
+      return;
+    }
 
-      try {
-        const objectId = String(item?.noradCatId || item?.satelliteId || item?.id || `${line1}_${line2}`);
-        byObjectId.set(objectId, {
-          id: item?.satelliteId || item?.noradCatId || item?.id || `${line1}_${line2}`,
-          name: item?.name || item?.satelliteName || "Unknown Object",
-          noradCatId: item?.noradCatId || item?.satelliteId || null,
-          line1,
-          line2,
-          satrec: twoline2satrec(line1, line2),
-        });
-      } catch (_error) {
-        // Ignore malformed rows and continue.
-      }
-    });
+    try {
+      const objectId = String(
+        item?.catalogId || item?.noradCatId || item?.satelliteId || item?.id || `${line1}_${line2}`
+      );
+      byObjectId.set(objectId, {
+        id: item?.catalogId || item?.satelliteId || item?.noradCatId || item?.id || `${line1}_${line2}`,
+        name: item?.name || item?.satelliteName || item?.objectName || "Unknown Object",
+        noradCatId: item?.catalogId || item?.noradCatId || item?.satelliteId || null,
+        line1,
+        line2,
+        satrec: twoline2satrec(line1, line2),
+      });
+    } catch (_error) {
+      // Ignore malformed rows and continue.
+    }
+  });
 
   return Array.from(byObjectId.values());
 }
@@ -183,6 +186,8 @@ export default function OrbitalDebrisPage() {
   const [sourceLabel, setSourceLabel] = useState("Live TLE API");
   const [retryAt, setRetryAt] = useState(() => readRateLimitTs());
   const [nowMs, setNowMs] = useState(Date.now());
+  const [catalogStale, setCatalogStale] = useState(false);
+  const [catalogCacheAge, setCatalogCacheAge] = useState(null);
   const hasFirstBatchRef = useRef(false);
 
   useEffect(() => {
@@ -239,6 +244,37 @@ export default function OrbitalDebrisPage() {
 
       setStreaming(true);
       setError("");
+
+      try {
+        const catalogPayload = await fetchCatalog(
+          {
+            type: "DEBRIS",
+            limit: 5000,
+            offset: 0,
+          },
+          { signal: controller.signal }
+        );
+
+        const catalogItems = Array.isArray(catalogPayload?.data) ? catalogPayload.data : [];
+        const hydratedFromCatalog = buildDebrisItems(catalogItems);
+
+        if (hydratedFromCatalog.length) {
+          if (!disposed) {
+            setDebrisItems(hydratedFromCatalog);
+            setSourceLabel("Catalog API");
+            setCatalogStale(Boolean(catalogPayload?.stale));
+            setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
+            setLoading(false);
+            setStreaming(false);
+          }
+          return;
+        }
+      } catch (catalogError) {
+        if (catalogError?.name === "AbortError") {
+          return;
+        }
+      }
+
       const collected = [];
       let page = 1;
 
@@ -258,7 +294,7 @@ export default function OrbitalDebrisPage() {
           const hydrated = buildDebrisItems(collected);
           if (hydrated.length) {
             setDebrisItems(hydrated);
-            setSourceLabel("Live TLE API");
+            setSourceLabel("Live TLE API (Ivan fallback)");
             writeCache(collected);
 
             if (!hasFirstBatchRef.current) {
@@ -474,6 +510,7 @@ export default function OrbitalDebrisPage() {
         }}
       >
         <div style={{ fontSize: "24px", fontWeight: 700, marginBottom: "4px" }}>Orbital Debris</div>
+        <DataStatus stale={catalogStale} cacheAge={catalogCacheAge} style={{ marginBottom: "8px" }} />
         <div style={{ color: "#cbd5e1", fontSize: "15px", marginBottom: "8px" }}>
           Tracking {stats.total.toLocaleString()} objects of {ORBITAL_DEBRIS_CONFIG.officialCatalogSize.toLocaleString()}+
           officially catalogued by US Space Surveillance Network
@@ -496,7 +533,7 @@ export default function OrbitalDebrisPage() {
         {error ? <div style={{ color: "#fca5a5", fontSize: "13px" }}>{error}</div> : null}
 
         <div style={{ color: "#9fb5d9", fontSize: "12px", marginTop: "8px" }}>
-          Source: {sourceLabel} via tle.ivanstanojevic.me + satellite.js propagation
+          Source: {sourceLabel} via catalog pipeline + Ivan fallback + satellite.js propagation
         </div>
       </aside>
     </section>

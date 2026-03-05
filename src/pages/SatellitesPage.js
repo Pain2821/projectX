@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CircleMarker, MapContainer, Polyline, Popup, TileLayer } from "react-leaflet";
 import {
   degreesLat,
@@ -9,13 +9,46 @@ import {
   twoline2satrec,
 } from "satellite.js";
 import { SATELLITES } from "../common/constants/satellites";
-import { fetchCelestrakTle } from "../common/api";
+import { fetchCatalog, fetchCelestrakTle } from "../common/api";
 import { appendUnwrappedTrailPoint, buildTrailSegments } from "../common/utils";
+import DataStatus from "../components/common/DataStatus";
 
 const TLE_REFRESH_MS = 6 * 60 * 60 * 1000;
 const POSITION_REFRESH_MS = 1000;
 const TRAIL_POINT_INTERVAL_MS = 1000;
 const MAX_TRAIL_POINTS = 80;
+const CATALOG_LIMIT = 200;
+
+const FALLBACK_COLORS = ["#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#fb7185", "#60a5fa", "#f43f5e"];
+
+function colorForIndex(index) {
+  return FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+}
+
+function buildFromCatalog(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      const line1 = String(item?.tle?.line1 || item?.line1 || "").trim();
+      const line2 = String(item?.tle?.line2 || item?.line2 || "").trim();
+      if (!line1.startsWith("1 ") || !line2.startsWith("2 ")) {
+        return null;
+      }
+
+      try {
+        return {
+          id: item?.catalogId || item?.noradCatId || item?.id || `cat-${index}`,
+          name: item?.name || "Unknown Satellite",
+          color: colorForIndex(index),
+          line1,
+          line2,
+          satrec: twoline2satrec(line1, line2),
+        };
+      } catch (_error) {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
 
 export default function SatellitesPage() {
   const [satellitePoints, setSatellitePoints] = useState([]);
@@ -24,12 +57,36 @@ export default function SatellitesPage() {
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [satrecs, setSatrecs] = useState([]);
+  const [catalogStale, setCatalogStale] = useState(false);
+  const [catalogCacheAge, setCatalogCacheAge] = useState(null);
   const lastTrailUpdateRef = useRef({});
 
   useEffect(() => {
     let disposed = false;
 
     async function loadTleData() {
+      try {
+        const catalogPayload = await fetchCatalog({
+          type: "PAYLOAD",
+          limit: CATALOG_LIMIT,
+          offset: 0,
+        });
+
+        const fromCatalog = buildFromCatalog(catalogPayload?.data);
+        if (fromCatalog.length) {
+          if (!disposed) {
+            setSatrecs(fromCatalog);
+            setCatalogStale(Boolean(catalogPayload?.stale));
+            setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
+            setError("");
+            setLoading(false);
+          }
+          return;
+        }
+      } catch (_error) {
+        // Continue with CelesTrak fallback.
+      }
+
       try {
         const tleRecords = await Promise.all(
           SATELLITES.map(async (satellite) => {
@@ -44,11 +101,13 @@ export default function SatellitesPage() {
 
         if (!disposed) {
           setSatrecs(tleRecords);
+          setCatalogStale(true);
+          setCatalogCacheAge(null);
           setError("");
         }
       } catch (requestError) {
         if (!disposed) {
-          setError(requestError.message || "Unable to load CelesTrak TLE data.");
+          setError(requestError.message || "Unable to load satellite TLE data.");
         }
       } finally {
         if (!disposed) {
@@ -124,7 +183,7 @@ export default function SatellitesPage() {
     return () => clearInterval(intervalId);
   }, [satrecs]);
 
-  const legendItems = useMemo(() => SATELLITES, []);
+  const legendItems = useMemo(() => satrecs.map((s) => ({ id: s.id, name: s.name, color: s.color })), [satrecs]);
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
@@ -139,7 +198,7 @@ export default function SatellitesPage() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
         />
-        {SATELLITES.map((satellite) => {
+        {legendItems.map((satellite) => {
           const segments = buildTrailSegments(trailHistory[satellite.id] || []);
 
           if (segments.length === 0) {
@@ -217,7 +276,8 @@ export default function SatellitesPage() {
         }}
       >
         <strong style={{ color: "#dbeafe", fontSize: "13px" }}>Satellite Legend</strong>
-        {legendItems.map((satellite) => (
+        <DataStatus stale={catalogStale} cacheAge={catalogCacheAge} />
+        {legendItems.slice(0, 14).map((satellite) => (
           <div key={satellite.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span
               style={{

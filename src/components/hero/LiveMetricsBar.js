@@ -1,53 +1,142 @@
-import React, { useState, useEffect, useRef } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
+import { fetchIssLocation, fetchUpcomingLaunches } from "../../common/api";
 
-// Simulated live metrics
-function generateMetrics() {
+const ISS_REFRESH_MS = 5000;
+const LAUNCH_REFRESH_MS = 60000;
+
+function parseLaunchDate(launch) {
+  const raw = launch?.net;
+  const time = raw ? Date.parse(raw) : Number.NaN;
+  return Number.isFinite(time) ? time : null;
+}
+
+function getNextLaunch(results) {
+  const items = Array.isArray(results) ? results : [];
+  const upcoming = items
+    .map((item) => ({ item, ts: parseLaunchDate(item) }))
+    .filter((entry) => Number.isFinite(entry.ts) && entry.ts > Date.now())
+    .sort((a, b) => a.ts - b.ts);
+
+  return upcoming[0]?.item || items[0] || null;
+}
+
+function buildCountdown(targetTs, nowTs) {
+  if (!Number.isFinite(targetTs)) {
+    return { h: "--", m: "--", s: "--" };
+  }
+
+  const delta = Math.max(0, targetTs - nowTs);
+  const totalSeconds = Math.floor(delta / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
   return {
-    issLat: (Math.random() * 100 - 50).toFixed(1),
-    issLon: (Math.random() * 260 - 130).toFixed(1),
-    issSpeed: (27580 + Math.random() * 40).toFixed(0),
-    debrisCount: 29400 + Math.floor(Math.random() * 150),
+    h: String(hours).padStart(2, "0"),
+    m: String(minutes).padStart(2, "0"),
+    s: String(seconds).padStart(2, "0"),
   };
 }
 
-export default function LiveMetricsBar() {
-  const [metrics, setMetrics] = useState(generateMetrics);
-  const [countdown, setCountdown] = useState({ h: 2, m: 14, s: 22 });
-  const [flashKey, setFlashKey] = useState(0);
-  const intervalRef = useRef(null);
+function formatSignedDegrees(value, pos, neg) {
+  if (!Number.isFinite(value)) {
+    return { text: "--", dir: "" };
+  }
 
-  // Update metrics every 3s
+  const dir = value >= 0 ? pos : neg;
+  const abs = Math.abs(value).toFixed(1);
+  return { text: `${abs}°`, dir };
+}
+
+export default function LiveMetricsBar() {
+  const [iss, setIss] = useState(null);
+  const [nextLaunchTs, setNextLaunchTs] = useState(null);
+  const [nowTs, setNowTs] = useState(Date.now());
+  const [flashKey, setFlashKey] = useState(0);
+
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      setMetrics(generateMetrics());
-      setFlashKey((k) => k + 1);
-    }, 3000);
-    return () => clearInterval(intervalRef.current);
+    let disposed = false;
+
+    async function loadIss() {
+      try {
+        const payload = await fetchIssLocation();
+        if (!disposed) {
+          setIss(payload);
+          setFlashKey((k) => k + 1);
+        }
+      } catch (_error) {
+        if (!disposed) {
+          setIss(null);
+        }
+      }
+    }
+
+    loadIss();
+    const intervalId = setInterval(loadIss, ISS_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      clearInterval(intervalId);
+    };
   }, []);
 
-  // Countdown timer
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadNextLaunch() {
+      try {
+        const payload = await fetchUpcomingLaunches(10, 0);
+        const nextLaunch = getNextLaunch(payload?.results);
+        const ts = parseLaunchDate(nextLaunch);
+        if (!disposed) {
+          setNextLaunchTs(ts);
+        }
+      } catch (_error) {
+        if (!disposed) {
+          setNextLaunchTs(null);
+        }
+      }
+    }
+
+    loadNextLaunch();
+    const intervalId = setInterval(loadNextLaunch, LAUNCH_REFRESH_MS);
+
+    return () => {
+      disposed = true;
+      clearInterval(intervalId);
+    };
+  }, []);
+
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown((prev) => {
-        let { h, m, s } = prev;
-        s -= 1;
-        if (s < 0) { s = 59; m -= 1; }
-        if (m < 0) { m = 59; h -= 1; }
-        if (h < 0) { h = 23; m = 59; s = 59; }
-        return { h, m, s };
-      });
+      setNowTs(Date.now());
     }, 1000);
+
     return () => clearInterval(timer);
   }, []);
 
-  const pad = (n) => String(n).padStart(2, "0");
+  const lat = Number(iss?.latitude);
+  const lon = Number(iss?.longitude);
+  const speed = Number(iss?.velocity);
+  const latText = formatSignedDegrees(lat, "N", "S");
+  const lonText = formatSignedDegrees(lon, "E", "W");
+  const countdown = useMemo(() => buildCountdown(nextLaunchTs, nowTs), [nextLaunchTs, nowTs]);
 
   const metricItems = [
-    { label: "ISS LAT", value: `${metrics.issLat}°`, sub: metrics.issLat > 0 ? "N" : "S" },
-    { label: "ISS LON", value: `${metrics.issLon}°`, sub: metrics.issLon > 0 ? "E" : "W" },
-    { label: "SPEED", value: `${Number(metrics.issSpeed).toLocaleString()}`, sub: "km/h" },
-    { label: "NEXT LAUNCH", value: `${pad(countdown.h)}:${pad(countdown.m)}:${pad(countdown.s)}`, sub: "", isMono: true },
-    { label: "DEBRIS OBJECTS", value: metrics.debrisCount.toLocaleString(), sub: "tracked" },
+    { label: "ISS LAT", value: latText.text, sub: latText.dir },
+    { label: "ISS LON", value: lonText.text, sub: lonText.dir },
+    {
+      label: "SPEED",
+      value: Number.isFinite(speed) ? Number(speed.toFixed(0)).toLocaleString() : "--",
+      sub: "km/h",
+    },
+    {
+      label: "NEXT LAUNCH",
+      value: `${countdown.h}:${countdown.m}:${countdown.s}`,
+      sub: "",
+      isMono: true,
+    },
+    { label: "DEBRIS OBJECTS", value: "27,000+", sub: "catalogued" },
   ];
 
   return (
@@ -104,7 +193,9 @@ export default function LiveMetricsBar() {
                 fontSize: "20px",
                 fontWeight: 700,
                 color: "var(--accent, #2de2e6)",
-                fontFamily: item.isMono ? "var(--font-mono, monospace)" : "var(--font-heading, 'Space Grotesk', sans-serif)",
+                fontFamily: item.isMono
+                  ? "var(--font-mono, monospace)"
+                  : "var(--font-heading, 'Space Grotesk', sans-serif)",
                 animation: "countup-flash 600ms ease",
                 display: "inline-flex",
                 alignItems: "baseline",
@@ -130,3 +221,5 @@ export default function LiveMetricsBar() {
     </div>
   );
 }
+
+
