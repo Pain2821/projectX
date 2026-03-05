@@ -1,8 +1,13 @@
 ﻿export const API_URLS = {
-  iss: "/satellites/25544",
-  tledata: "/satellites/25544/tledata",
-  tles: "/satellites/25544/tles",
-  satelliteById: (id) => `/satellites/${id}`,
+  iss: "/api/iss",
+  issTle: "/api/iss/tle",
+  satelliteById: (id) => `/api/satellites/${id}`,
+  celestrakTle: (id, name = "ISS") => `/api/tle/celestrak/${id}?name=${encodeURIComponent(name)}`,
+  news: (limit, offset) => `/api/news?limit=${limit}&offset=${offset}`,
+  launches: (limit, offset) => `/api/launches?limit=${limit}&offset=${offset}`,
+  marsWeather: "/api/mars-weather",
+  exoplanets: "/api/exoplanets",
+  tleIvan: (page, pageSize) => `/api/tle-ivan?page=${page}&pageSize=${pageSize}`,
 };
 
 export default API_URLS;

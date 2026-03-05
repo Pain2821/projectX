@@ -1,6 +1,5 @@
-import BASE_API_URL from "./baseApi";
+﻿import BASE_API_URL from "./baseApi";
 import { API_URLS } from "./apiUrls";
-import { EXTERNAL_API } from "../config";
 
 function buildUrl(path) {
   return `${BASE_API_URL}${path}`;
@@ -146,7 +145,7 @@ export async function fetchSatellitesByIds(ids, options = {}) {
 }
 
 export async function fetchIssTleData(options = {}) {
-  const paths = [API_URLS.tledata, API_URLS.tles];
+  const paths = [API_URLS.issTle].filter(Boolean);
   let lastError = null;
 
   for (const path of paths) {
@@ -175,44 +174,20 @@ export async function fetchIssTleData(options = {}) {
 }
 
 export async function fetchCelestrakTle(id, fallbackName, options = {}) {
-  const sourceUrl = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=TLE`;
-  const fallbackProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(sourceUrl)}`;
+  const payload = await fetchUnknown(buildUrl(API_URLS.celestrakTle(id, fallbackName)), options);
+  const tle = extractTleFromUnknown(payload, fallbackName);
 
-  const urls = [sourceUrl, fallbackProxyUrl];
-  let lastError = null;
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, options);
-
-      if (!response.ok) {
-        throw new Error(`TLE request failed with status ${response.status}`);
-      }
-
-      const text = await response.text();
-      const tle = extractTleFromText(text, fallbackName);
-
-      if (!tle) {
-        throw new Error(`Invalid TLE data for ${fallbackName}.`);
-      }
-
-      return tle;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw error;
-      }
-      lastError = error;
-    }
+  if (!tle) {
+    throw new Error(`Invalid TLE data for ${fallbackName}.`);
   }
 
-  throw lastError || new Error(`Unable to fetch TLE for ${fallbackName}.`);
+  return tle;
 }
 
 export async function fetchSpaceNewsArticles(limit = 20, offset = 0, options = {}) {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 20;
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
-  const url = `${EXTERNAL_API.spaceNewsBase}/articles/?limit=${safeLimit}&offset=${safeOffset}`;
-  const payload = await fetchJson(url, options);
+  const payload = await fetchJson(buildUrl(API_URLS.news(safeLimit, safeOffset)), options);
 
   return {
     results: Array.isArray(payload?.results) ? payload.results : [],
@@ -225,8 +200,7 @@ export async function fetchSpaceNewsArticles(limit = 20, offset = 0, options = {
 export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}) {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(50, Math.floor(limit))) : 10;
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
-  const url = `${EXTERNAL_API.launchLibraryBase}/launch/upcoming/?limit=${safeLimit}&offset=${safeOffset}&format=json`;
-  const payload = await fetchJson(url, options);
+  const payload = await fetchJson(buildUrl(API_URLS.launches(safeLimit, safeOffset)), options);
 
   return {
     results: Array.isArray(payload?.results) ? payload.results : [],
@@ -237,47 +211,45 @@ export async function fetchUpcomingLaunches(limit = 10, offset = 0, options = {}
 }
 
 export async function fetchMarsWeather(options = {}) {
-  return fetchJson(EXTERNAL_API.nasaInsightWeather, options);
+  return fetchJson(buildUrl(API_URLS.marsWeather), options);
 }
 
 export async function fetchExoplanets(options = {}) {
-  const fallbackProxyUrl1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(
-    EXTERNAL_API.nasaExoplanets
-  )}`;
-  const fallbackProxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(EXTERNAL_API.nasaExoplanets)}`;
-  const urls = [EXTERNAL_API.nasaExoplanets, fallbackProxyUrl1, fallbackProxyUrl2];
-  let lastError = null;
-
-  for (const url of urls) {
-    try {
-      return await fetchJson(url, options);
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw error;
-      }
-      lastError = error;
-    }
-  }
-
-  throw lastError || new Error("Unable to load exoplanet data.");
+  return fetchJson(buildUrl(API_URLS.exoplanets), options);
 }
 
 export async function fetchIvanTlePage(page = 1, pageSize = 100, options = {}) {
-  let url = "";
+  let safePage = 1;
+  let safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 100;
 
-  if (typeof page === "string" && page.startsWith("http")) {
-    url = page;
+  if (typeof page === "string") {
+    if (page.startsWith("http")) {
+      try {
+        const parsed = new URL(page);
+        safePage = Number(parsed.searchParams.get("page") || 1);
+        safePageSize = Number(parsed.searchParams.get("page-size") || parsed.searchParams.get("pageSize") || safePageSize);
+      } catch (_error) {
+        safePage = 1;
+      }
+    } else {
+      safePage = Number(page);
+    }
   } else {
-    const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
-    const safePageSize = Number.isFinite(pageSize) ? Math.max(1, Math.min(100, Math.floor(pageSize))) : 100;
-    url = `${EXTERNAL_API.tleIvanBase}?page=${safePage}&page-size=${safePageSize}`;
+    safePage = Number(page);
   }
 
-  const payload = await fetchJson(url, options);
-  const items = Array.isArray(payload?.member) ? payload.member : [];
+  safePage = Number.isFinite(safePage) ? Math.max(1, Math.floor(safePage)) : 1;
+  safePageSize = Number.isFinite(safePageSize) ? Math.max(1, Math.min(100, Math.floor(safePageSize))) : 100;
+
+  const payload = await fetchJson(buildUrl(API_URLS.tleIvan(safePage, safePageSize)), options);
+  const items = Array.isArray(payload?.items)
+    ? payload.items
+    : Array.isArray(payload?.member)
+      ? payload.member
+      : [];
 
   return {
     items,
-    next: payload?.view?.next || null,
+    next: payload?.next || payload?.view?.next || null,
   };
 }

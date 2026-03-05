@@ -1,4 +1,4 @@
-import { fetchIssLocation, fetchIssTleData } from "./api";
+﻿import { fetchIssLocation, fetchIssTleData, fetchSpaceNewsArticles } from "./api";
 import BASE_API_URL from "./baseApi";
 import { API_URLS } from "./apiUrls";
 
@@ -14,7 +14,7 @@ describe("api layer", () => {
     jest.clearAllMocks();
   });
 
-  it("fetches ISS location from configured endpoint", async () => {
+  it("fetches ISS location from backend", async () => {
     const payload = { latitude: 1, longitude: 2 };
     global.fetch.mockResolvedValue({
       ok: true,
@@ -27,30 +27,41 @@ describe("api layer", () => {
     expect(global.fetch).toHaveBeenCalledWith(`${BASE_API_URL}${API_URLS.iss}`, {});
   });
 
-  it("falls back from tledata to tles endpoint", async () => {
-    global.fetch
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        headers: { get: () => "application/json" },
-        json: async () => ({
-          name: "iss",
-          line1: "1 25544U TEST",
-          line2: "2 25544 TEST",
-        }),
-      });
+  it("fetches ISS TLE from backend endpoint", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({
+        name: "ISS",
+        line1: "1 25544U TEST",
+        line2: "2 25544 TEST",
+      }),
+    });
 
     const tle = await fetchIssTleData();
 
     expect(tle).toEqual({
-      name: "iss",
+      name: "ISS",
       line1: "1 25544U TEST",
       line2: "2 25544 TEST",
     });
-    expect(global.fetch).toHaveBeenNthCalledWith(1, `${BASE_API_URL}${API_URLS.tledata}`, {});
-    expect(global.fetch).toHaveBeenNthCalledWith(2, `${BASE_API_URL}${API_URLS.tles}`, {});
+    expect(global.fetch).toHaveBeenCalledWith(`${BASE_API_URL}${API_URLS.issTle}`, {});
+  });
+
+  it("fetches paginated news from backend", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ id: 1 }],
+        count: 1,
+        next: null,
+        previous: null,
+      }),
+    });
+
+    const result = await fetchSpaceNewsArticles(20, 0);
+
+    expect(result.count).toBe(1);
+    expect(global.fetch).toHaveBeenCalledWith(`${BASE_API_URL}${API_URLS.news(20, 0)}`, {});
   });
 });
