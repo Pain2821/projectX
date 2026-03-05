@@ -136,14 +136,6 @@ export async function fetchIssLocation(options = {}) {
   return fetchJson(buildUrl(API_URLS.iss), options);
 }
 
-export async function fetchSatelliteById(id, options = {}) {
-  return fetchJson(buildUrl(API_URLS.satelliteById(id)), options);
-}
-
-export async function fetchSatellitesByIds(ids, options = {}) {
-  return Promise.all(ids.map((id) => fetchSatelliteById(id, options)));
-}
-
 export async function fetchIssTleData(options = {}) {
   const paths = [API_URLS.issTle].filter(Boolean);
   let lastError = null;

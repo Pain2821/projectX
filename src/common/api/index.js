@@ -1,8 +1,6 @@
-export {
+﻿export {
   fetchIssLocation,
   fetchIssTleData,
-  fetchSatelliteById,
-  fetchSatellitesByIds,
   fetchCelestrakTle,
   fetchSpaceNewsArticles,
   fetchUpcomingLaunches,

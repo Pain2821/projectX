@@ -1,6 +1,6 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import TopNav from "./components/TopNav";
+import Header from "./components/layout/Header";
 import {
   ExoplanetsPage,
   HomePage,
@@ -18,7 +18,7 @@ export default function App() {
     <ThemeProvider>
       <AppWrapper>
         <BrowserRouter>
-          <TopNav />
+          <Header />
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route

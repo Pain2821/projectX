@@ -1,52 +1,66 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import HeroSection from "../components/hero/HeroSection";
+import LiveMetricsBar from "../components/hero/LiveMetricsBar";
+import ISSTrackerCard from "../components/dashboard/ISSTrackerCard";
+import LaunchCountdownCard from "../components/dashboard/LaunchCountdownCard";
+import SatellitesCard from "../components/dashboard/SatellitesCard";
+import DebrisCard from "../components/dashboard/DebrisCard";
+import MarsWeatherWidget from "../components/widgets/MarsWeatherWidget";
+import SatelliteHeatmap from "../components/widgets/SatelliteHeatmap";
+import DataInsights from "../components/insights/DataInsights";
+import NewsRail from "../components/news/NewsRail";
+import Footer from "../components/layout/Footer";
 
 export default function HomePage() {
-  const buttonStyle = {
-    display: "inline-block",
-    textDecoration: "none",
-    padding: "12px 18px",
-    borderRadius: "10px",
-    border: "1px solid rgba(124, 148, 183, 0.45)",
-    background: "rgba(8, 23, 44, 0.85)",
-    color: "#e2e8f0",
-    fontSize: "14px",
-    width: "100%",
-    textAlign: "center",
-    boxSizing: "border-box",
-  };
-
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        display: "grid",
-        placeItems: "center",
-        padding: "84px 12px 12px",
-        boxSizing: "border-box",
+        minHeight: "100vh",
+        background: "var(--bg-primary, #05070d)",
+        overflowX: "hidden",
       }}
     >
-      <div
-        style={{
-          border: "1px solid rgba(124, 148, 183, 0.35)",
-          borderRadius: "14px",
-          background: "rgba(5, 10, 22, 0.62)",
-          padding: "24px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
-          width: "min(320px, 100%)",
-          boxSizing: "border-box",
-        }}
-      >
-        <Link to="/liveiss" style={buttonStyle}>
-          Track ISS
-        </Link>
-        <Link to="/satellites" style={buttonStyle}>
-          Track Satellites
-        </Link>
-      </div>
+      {/* Hero */}
+      <HeroSection />
+
+      {/* Live Metrics Strip */}
+      <LiveMetricsBar />
+
+      {/* Primary Dashboard Grid */}
+      <section className="section" aria-label="Dashboard overview">
+        <h2 className="section-title">Mission Dashboard</h2>
+        <div className="dashboard-grid">
+          <ISSTrackerCard />
+          <LaunchCountdownCard />
+          <SatellitesCard />
+          <DebrisCard />
+        </div>
+      </section>
+
+      {/* Live Widgets */}
+      <section className="section" aria-label="Live data widgets">
+        <h2 className="section-title">Live Data</h2>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "var(--space-lg, 24px)",
+          }}
+          className="dashboard-grid"
+        >
+          <MarsWeatherWidget />
+          <SatelliteHeatmap />
+        </div>
+      </section>
+
+      {/* Data Insights */}
+      <DataInsights />
+
+      {/* News Rail */}
+      <NewsRail />
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }

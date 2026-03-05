@@ -15,6 +15,7 @@
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.30.3",
     "react-scripts": "^5.0.1",
+    "recharts": "^3.7.0",
     "satellite.js": "^6.0.2",
     "suncalc": "^1.9.0"
   },

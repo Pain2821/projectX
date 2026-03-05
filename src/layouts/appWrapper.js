@@ -24,7 +24,7 @@ export function ThemeProvider({ children }) {
         minHeight: "100dvh",
         width: "100%",
         overflowX: "hidden",
-        overflowY: "hidden",
+        overflowY: "auto",
         background: theme.colors.background,
         color: theme.colors.text,
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
