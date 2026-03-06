@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, TileLayer } from "react-leaflet";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CircleMarker, MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { degreesLat, degreesLong, eciToGeodetic, gstime, propagate, twoline2satrec } from "satellite.js";
 import { fetchCatalog, fetchIvanTlePage } from "../common/api";
 import { ALTITUDE_BAND, ORBITAL_DEBRIS_CONFIG } from "../common/config";
@@ -12,6 +12,15 @@ const MAX_PAGES = ORBITAL_DEBRIS_CONFIG.maxPages;
 const FETCH_STEP_DELAY_MS = ORBITAL_DEBRIS_CONFIG.fetchStepDelayMs;
 const CACHE_FRESH_MS = ORBITAL_DEBRIS_CONFIG.cacheFreshMs;
 const DEFAULT_COOLDOWN_MS = ORBITAL_DEBRIS_CONFIG.defaultCooldownMs;
+
+const BATCH_SIZE = 500;
+
+const ALTITUDE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "low", label: "LEO <1000km" },
+  { key: "mid", label: "MEO 1000–20000km" },
+  { key: "high", label: "GEO >20000km" },
+];
 
 function safeNumber(value, fallback = 0) {
   const next = Number(value);
@@ -177,6 +186,39 @@ function formatCountdown(ms) {
   return `${minutes}m ${seconds}s`;
 }
 
+// ---------------------------------------------------------------------------
+// ViewportFilter — lives inside <MapContainer> so useMap() works.
+// Listens to moveend/zoomend and pushes bounds back up.
+// ---------------------------------------------------------------------------
+function ViewportFilter({ onBoundsChange }) {
+  const map = useMap();
+
+  const emitBounds = useCallback(() => {
+    const bounds = map.getBounds();
+    onBoundsChange({
+      south: bounds.getSouth(),
+      north: bounds.getNorth(),
+      west: bounds.getWest(),
+      east: bounds.getEast(),
+    });
+  }, [map, onBoundsChange]);
+
+  // fire once on mount so initial view is populated
+  useEffect(() => {
+    emitBounds();
+  }, [emitBounds]);
+
+  useMapEvents({
+    moveend: emitBounds,
+    zoomend: emitBounds,
+  });
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
 export default function OrbitalDebrisPage() {
   const [debrisItems, setDebrisItems] = useState([]);
   const [points, setPoints] = useState([]);
@@ -188,8 +230,13 @@ export default function OrbitalDebrisPage() {
   const [nowMs, setNowMs] = useState(Date.now());
   const [catalogStale, setCatalogStale] = useState(false);
   const [catalogCacheAge, setCatalogCacheAge] = useState(null);
+  const [catalogTotal, setCatalogTotal] = useState(null);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [altitudeFilter, setAltitudeFilter] = useState("all");
+  const [viewBounds, setViewBounds] = useState(null);
   const hasFirstBatchRef = useRef(false);
 
+  // tick for cooldown display
   useEffect(() => {
     const timer = setInterval(() => {
       setNowMs(Date.now());
@@ -198,18 +245,23 @@ export default function OrbitalDebrisPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // hydrate from localStorage on mount
   useEffect(() => {
     const cached = readCache();
     if (cached?.items?.length) {
       const hydrated = buildDebrisItems(cached.items);
       if (hydrated.length) {
         setDebrisItems(hydrated);
+        setLoadedCount(hydrated.length);
         setSourceLabel("Cached TLE data");
         setLoading(false);
       }
     }
   }, []);
 
+  // -----------------------------------------------------------------------
+  // Main data-loading effect — progressive catalog batches
+  // -----------------------------------------------------------------------
   useEffect(() => {
     let disposed = false;
     const controller = new AbortController();
@@ -236,45 +288,84 @@ export default function OrbitalDebrisPage() {
         const hydrated = buildDebrisItems(cached.items);
         if (hydrated.length) {
           setDebrisItems(hydrated);
+          setLoadedCount(hydrated.length);
           setSourceLabel("Cached TLE data");
           setLoading(false);
           return;
         }
       }
 
+      // ----- progressive catalog loading -----
       setStreaming(true);
       setError("");
 
       try {
-        const catalogPayload = await fetchCatalog(
-          {
-            type: "DEBRIS",
-            limit: 5000,
-            offset: 0,
-          },
-          { signal: controller.signal }
-        );
+        let offset = 0;
+        const allRawItems = [];
+        let knownTotal = 0;
 
-        const catalogItems = Array.isArray(catalogPayload?.data) ? catalogPayload.data : [];
-        const hydratedFromCatalog = buildDebrisItems(catalogItems);
+        while (!disposed) {
+          const catalogPayload = await fetchCatalog(
+            { type: "DEBRIS", limit: BATCH_SIZE, offset },
+            { signal: controller.signal }
+          );
 
-        if (hydratedFromCatalog.length) {
-          if (!disposed) {
-            setDebrisItems(hydratedFromCatalog);
-            setSourceLabel("Catalog API");
-            setCatalogStale(Boolean(catalogPayload?.stale));
-            setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
-            setLoading(false);
-            setStreaming(false);
+          const batchItems = Array.isArray(catalogPayload?.data) ? catalogPayload.data : [];
+          if (Number.isFinite(catalogPayload?.total) && catalogPayload.total > 0) {
+            knownTotal = catalogPayload.total;
+            setCatalogTotal(knownTotal);
           }
-          return;
+          setCatalogStale(Boolean(catalogPayload?.stale));
+          setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
+
+          if (!batchItems.length) {
+            break;
+          }
+
+          allRawItems.push(...batchItems);
+
+          const hydrated = buildDebrisItems(allRawItems);
+          if (!disposed) {
+            setDebrisItems(hydrated);
+            setLoadedCount(hydrated.length);
+            setSourceLabel("Catalog API");
+
+            if (!hasFirstBatchRef.current) {
+              hasFirstBatchRef.current = true;
+              setLoading(false);
+            }
+          }
+
+          offset += BATCH_SIZE;
+
+          // stop when we've fetched everything the API says exists
+          if (knownTotal > 0 && offset >= knownTotal) {
+            break;
+          }
+
+          // also stop if we got fewer items than requested (last page)
+          if (batchItems.length < BATCH_SIZE) {
+            break;
+          }
+
+          await sleep(200);
         }
+
+        if (!disposed) {
+          writeCache(allRawItems);
+          setLoading(false);
+          setStreaming(false);
+        }
+
+        return;
       } catch (catalogError) {
         if (catalogError?.name === "AbortError") {
           return;
         }
+        // fall through to Ivan TLE fallback
       }
 
+      // ----- Ivan TLE fallback (unchanged) -----
       const collected = [];
       let page = 1;
 
@@ -294,6 +385,7 @@ export default function OrbitalDebrisPage() {
           const hydrated = buildDebrisItems(collected);
           if (hydrated.length) {
             setDebrisItems(hydrated);
+            setLoadedCount(hydrated.length);
             setSourceLabel("Live TLE API (Ivan fallback)");
             writeCache(collected);
 
@@ -331,6 +423,7 @@ export default function OrbitalDebrisPage() {
           if (cached?.items?.length) {
             const hydrated = buildDebrisItems(cached.items);
             setDebrisItems(hydrated);
+            setLoadedCount(hydrated.length);
             setSourceLabel("Cached TLE data");
             setLoading(false);
           } else {
@@ -341,6 +434,7 @@ export default function OrbitalDebrisPage() {
           if (cached?.items?.length) {
             const hydrated = buildDebrisItems(cached.items);
             setDebrisItems(hydrated);
+            setLoadedCount(hydrated.length);
             setSourceLabel("Cached TLE data");
           }
           setLoading(false);
@@ -360,8 +454,23 @@ export default function OrbitalDebrisPage() {
     };
   }, []);
 
+  // -----------------------------------------------------------------------
+  // Altitude-filtered items
+  // -----------------------------------------------------------------------
+  const filteredDebrisItems = useMemo(() => {
+    if (altitudeFilter === "all") {
+      return debrisItems;
+    }
+    // We can't filter by altitude before propagation, so we pass all items
+    // through and filter after position calculation below.
+    return debrisItems;
+  }, [debrisItems, altitudeFilter]);
+
+  // -----------------------------------------------------------------------
+  // SGP4 propagation — produces lat/lng/alt points from TLE satrecs
+  // -----------------------------------------------------------------------
   useEffect(() => {
-    if (!debrisItems.length) {
+    if (!filteredDebrisItems.length) {
       setPoints([]);
       return undefined;
     }
@@ -376,17 +485,22 @@ export default function OrbitalDebrisPage() {
       const now = new Date();
       const gmst = gstime(now);
 
-      const nextPoints = debrisItems
+      const nextPoints = filteredDebrisItems
         .map((item) => {
           const pv = propagate(item.satrec, now);
 
-          if (!pv?.position) {
+          if (!pv || !pv.position || pv.position === true) {
             return null;
           }
 
           const geodetic = eciToGeodetic(pv.position, gmst);
           const altitudeKm = safeNumber(geodetic?.height, 0);
           const band = classifyAltitude(altitudeKm);
+
+          // altitude filter applied post-propagation
+          if (altitudeFilter !== "all" && band !== altitudeFilter) {
+            return null;
+          }
 
           return {
             id: item.id,
@@ -410,14 +524,35 @@ export default function OrbitalDebrisPage() {
       disposed = true;
       clearInterval(interval);
     };
-  }, [debrisItems]);
+  }, [filteredDebrisItems, altitudeFilter]);
 
+  // -----------------------------------------------------------------------
+  // Viewport-filtered points — only markers inside current map bounds
+  // -----------------------------------------------------------------------
+  const visiblePoints = useMemo(() => {
+    if (!viewBounds) {
+      return points;
+    }
+
+    return points.filter((p) => {
+      return (
+        p.latitude >= viewBounds.south &&
+        p.latitude <= viewBounds.north &&
+        p.longitude >= viewBounds.west &&
+        p.longitude <= viewBounds.east
+      );
+    });
+  }, [points, viewBounds]);
+
+  // -----------------------------------------------------------------------
+  // Stats derived from visible points
+  // -----------------------------------------------------------------------
   const stats = useMemo(() => {
     let low = 0;
     let mid = 0;
     let high = 0;
 
-    points.forEach((point) => {
+    visiblePoints.forEach((point) => {
       if (point.band === ALTITUDE_BAND.low) {
         low += 1;
       } else if (point.band === ALTITUDE_BAND.mid) {
@@ -428,15 +563,26 @@ export default function OrbitalDebrisPage() {
     });
 
     return {
-      total: points.length,
+      total: visiblePoints.length,
       low,
       mid,
       high,
     };
-  }, [points]);
+  }, [visiblePoints]);
+
+  const handleBoundsChange = useCallback((bounds) => {
+    setViewBounds(bounds);
+  }, []);
 
   const cooldownText =
     retryAt > nowMs ? `Using cached data - full refresh in ${formatCountdown(retryAt - nowMs)}.` : "";
+
+  const progressText =
+    streaming && catalogTotal
+      ? `Loading ${loadedCount.toLocaleString()} of ${catalogTotal.toLocaleString()}…`
+      : streaming
+        ? `Loading ${loadedCount.toLocaleString()} objects…`
+        : null;
 
   return (
     <section
@@ -470,7 +616,9 @@ export default function OrbitalDebrisPage() {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
 
-        {points.map((point) => {
+        <ViewportFilter onBoundsChange={handleBoundsChange} />
+
+        {visiblePoints.map((point) => {
           const color = colorByBand(point.band);
           return (
             <CircleMarker
@@ -511,10 +659,47 @@ export default function OrbitalDebrisPage() {
       >
         <div style={{ fontSize: "24px", fontWeight: 700, marginBottom: "4px" }}>Orbital Debris</div>
         <DataStatus stale={catalogStale} cacheAge={catalogCacheAge} style={{ marginBottom: "8px" }} />
+
         <div style={{ color: "#cbd5e1", fontSize: "15px", marginBottom: "8px" }}>
-          Tracking {stats.total.toLocaleString()} objects of {ORBITAL_DEBRIS_CONFIG.officialCatalogSize.toLocaleString()}+
-          officially catalogued by US Space Surveillance Network
+          Showing {stats.total.toLocaleString()} of{" "}
+          {(catalogTotal || ORBITAL_DEBRIS_CONFIG.officialCatalogSize).toLocaleString()} tracked objects
         </div>
+
+        {/* Altitude filter buttons */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "6px",
+            marginBottom: "10px",
+          }}
+        >
+          {ALTITUDE_FILTERS.map((filter) => {
+            const isActive = altitudeFilter === filter.key;
+            return (
+              <button
+                key={filter.key}
+                onClick={() => setAltitudeFilter(filter.key)}
+                style={{
+                  padding: "4px 10px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  border: isActive ? "1px solid #22d3ee" : "1px solid rgba(124, 148, 183, 0.35)",
+                  borderRadius: "6px",
+                  background: isActive
+                    ? "rgba(34, 211, 238, 0.15)"
+                    : "rgba(255, 255, 255, 0.04)",
+                  color: isActive ? "#22d3ee" : "#94a3b8",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {filter.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{ color: "#34d399", fontSize: "14px", marginBottom: "2px" }}>
           Under 1000km: {stats.low.toLocaleString()}
         </div>
@@ -526,8 +711,8 @@ export default function OrbitalDebrisPage() {
         </div>
 
         {loading ? <div style={{ color: "#93c5fd", fontSize: "13px" }}>Initializing debris feed...</div> : null}
-        {streaming && !loading ? (
-          <div style={{ color: "#93c5fd", fontSize: "13px" }}>Streaming additional pages...</div>
+        {progressText ? (
+          <div style={{ color: "#93c5fd", fontSize: "13px" }}>{progressText}</div>
         ) : null}
         {cooldownText ? <div style={{ color: "#fcd34d", fontSize: "13px" }}>{cooldownText}</div> : null}
         {error ? <div style={{ color: "#fca5a5", fontSize: "13px" }}>{error}</div> : null}

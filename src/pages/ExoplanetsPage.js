@@ -552,6 +552,11 @@ export default function ExoplanetsPage() {
           <p style={{ margin: "8px 0 0", color: "#9fb5d9", fontSize: "13px" }}>
             Bubble chart: size = planet radius, color = discovery method, axes = orbital period and mass
           </p>
+          {!loading && data.length > 0 ? (
+            <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "2px" }}>
+              Showing {data.length.toLocaleString()} of {rawData.length.toLocaleString()} exoplanets
+            </div>
+          ) : null}
         </header>
 
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", color: "#cbd5e1", fontSize: "12px" }}>

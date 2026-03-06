@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { CircleMarker, MapContainer, Polyline, Popup, TileLayer } from "react-leaflet";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import {
   degreesLat,
   degreesLong,
@@ -17,7 +17,7 @@ const TLE_REFRESH_MS = 6 * 60 * 60 * 1000;
 const POSITION_REFRESH_MS = 1000;
 const TRAIL_POINT_INTERVAL_MS = 1000;
 const MAX_TRAIL_POINTS = 80;
-const CATALOG_LIMIT = 200;
+const BATCH_SIZE = 500;
 
 const FALLBACK_COLORS = ["#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#fb7185", "#60a5fa", "#f43f5e"];
 
@@ -50,43 +50,119 @@ function buildFromCatalog(items) {
     .filter(Boolean);
 }
 
+// ---------------------------------------------------------------------------
+// ViewportFilter — lives inside <MapContainer> so useMap() works.
+// ---------------------------------------------------------------------------
+function ViewportFilter({ onBoundsChange }) {
+  const map = useMap();
+
+  const emitBounds = useCallback(() => {
+    const bounds = map.getBounds();
+    onBoundsChange({
+      south: bounds.getSouth(),
+      north: bounds.getNorth(),
+      west: bounds.getWest(),
+      east: bounds.getEast(),
+    });
+  }, [map, onBoundsChange]);
+
+  useEffect(() => {
+    emitBounds();
+  }, [emitBounds]);
+
+  useMapEvents({
+    moveend: emitBounds,
+    zoomend: emitBounds,
+  });
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
 export default function SatellitesPage() {
   const [satellitePoints, setSatellitePoints] = useState([]);
   const [trailHistory, setTrailHistory] = useState({});
   const [loading, setLoading] = useState(true);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
   const [satrecs, setSatrecs] = useState([]);
   const [catalogStale, setCatalogStale] = useState(false);
   const [catalogCacheAge, setCatalogCacheAge] = useState(null);
+  const [catalogTotal, setCatalogTotal] = useState(null);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [viewBounds, setViewBounds] = useState(null);
   const lastTrailUpdateRef = useRef({});
 
+  // -----------------------------------------------------------------------
+  // Progressive catalog loading
+  // -----------------------------------------------------------------------
   useEffect(() => {
     let disposed = false;
 
     async function loadTleData() {
-      try {
-        const catalogPayload = await fetchCatalog({
-          type: "PAYLOAD",
-          limit: CATALOG_LIMIT,
-          offset: 0,
-        });
+      setStreaming(true);
 
-        const fromCatalog = buildFromCatalog(catalogPayload?.data);
-        if (fromCatalog.length) {
-          if (!disposed) {
+      try {
+        let offset = 0;
+        const allRawItems = [];
+        let knownTotal = 0;
+
+        while (!disposed) {
+          const catalogPayload = await fetchCatalog({
+            type: "PAYLOAD",
+            limit: BATCH_SIZE,
+            offset,
+          });
+
+          const batchItems = Array.isArray(catalogPayload?.data) ? catalogPayload.data : [];
+          if (Number.isFinite(catalogPayload?.total) && catalogPayload.total > 0) {
+            knownTotal = catalogPayload.total;
+            setCatalogTotal(knownTotal);
+          }
+          setCatalogStale(Boolean(catalogPayload?.stale));
+          setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
+
+          if (!batchItems.length) {
+            break;
+          }
+
+          allRawItems.push(...batchItems);
+
+          const fromCatalog = buildFromCatalog(allRawItems);
+          if (fromCatalog.length && !disposed) {
             setSatrecs(fromCatalog);
-            setCatalogStale(Boolean(catalogPayload?.stale));
-            setCatalogCacheAge(catalogPayload?.cacheAge ?? null);
+            setLoadedCount(fromCatalog.length);
             setError("");
             setLoading(false);
           }
-          return;
+
+          offset += BATCH_SIZE;
+
+          if (knownTotal > 0 && offset >= knownTotal) {
+            break;
+          }
+
+          if (batchItems.length < BATCH_SIZE) {
+            break;
+          }
+
+          // small delay between batches
+          await new Promise((r) => setTimeout(r, 200));
         }
+
+        if (!disposed) {
+          setStreaming(false);
+          setLoading(false);
+        }
+        return;
       } catch (_error) {
-        // Continue with CelesTrak fallback.
+        // Fall through to CelesTrak fallback.
       }
 
+      // CelesTrak fallback (unchanged)
       try {
         const tleRecords = await Promise.all(
           SATELLITES.map(async (satellite) => {
@@ -101,6 +177,7 @@ export default function SatellitesPage() {
 
         if (!disposed) {
           setSatrecs(tleRecords);
+          setLoadedCount(tleRecords.length);
           setCatalogStale(true);
           setCatalogCacheAge(null);
           setError("");
@@ -112,6 +189,7 @@ export default function SatellitesPage() {
       } finally {
         if (!disposed) {
           setLoading(false);
+          setStreaming(false);
         }
       }
     }
@@ -125,6 +203,9 @@ export default function SatellitesPage() {
     };
   }, []);
 
+  // -----------------------------------------------------------------------
+  // SGP4 propagation — every 1s
+  // -----------------------------------------------------------------------
   useEffect(() => {
     if (!satrecs.length) {
       return undefined;
@@ -139,7 +220,7 @@ export default function SatellitesPage() {
         .map((record) => {
           const pv = propagate(record.satrec, now);
 
-          if (!pv.position) {
+          if (!pv || !pv.position || pv.position === true) {
             return null;
           }
 
@@ -183,7 +264,37 @@ export default function SatellitesPage() {
     return () => clearInterval(intervalId);
   }, [satrecs]);
 
+  // -----------------------------------------------------------------------
+  // Viewport-filtered points
+  // -----------------------------------------------------------------------
+  const visiblePoints = useMemo(() => {
+    if (!viewBounds) {
+      return satellitePoints;
+    }
+
+    return satellitePoints.filter(
+      (p) =>
+        p.latitude >= viewBounds.south &&
+        p.latitude <= viewBounds.north &&
+        p.longitude >= viewBounds.west &&
+        p.longitude <= viewBounds.east
+    );
+  }, [satellitePoints, viewBounds]);
+
+  const visibleIds = useMemo(() => new Set(visiblePoints.map((p) => p.id)), [visiblePoints]);
+
   const legendItems = useMemo(() => satrecs.map((s) => ({ id: s.id, name: s.name, color: s.color })), [satrecs]);
+
+  const handleBoundsChange = useCallback((bounds) => {
+    setViewBounds(bounds);
+  }, []);
+
+  const progressText =
+    streaming && catalogTotal
+      ? `Loading ${loadedCount.toLocaleString()} of ${catalogTotal.toLocaleString()}…`
+      : streaming
+        ? `Loading ${loadedCount.toLocaleString()} satellites…`
+        : null;
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
@@ -198,7 +309,15 @@ export default function SatellitesPage() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
         />
+
+        <ViewportFilter onBoundsChange={handleBoundsChange} />
+
         {legendItems.map((satellite) => {
+          // Only render trails for satellites visible in viewport
+          if (!visibleIds.has(satellite.id)) {
+            return null;
+          }
+
           const segments = buildTrailSegments(trailHistory[satellite.id] || []);
 
           if (segments.length === 0) {
@@ -231,7 +350,7 @@ export default function SatellitesPage() {
           );
         })}
 
-        {satellitePoints.map((satellite) => (
+        {visiblePoints.map((satellite) => (
           <CircleMarker
             key={satellite.id}
             center={[satellite.latitude, satellite.longitude]}
@@ -277,6 +396,10 @@ export default function SatellitesPage() {
       >
         <strong style={{ color: "#dbeafe", fontSize: "13px" }}>Satellite Legend</strong>
         <DataStatus stale={catalogStale} cacheAge={catalogCacheAge} />
+        <div style={{ color: "#94a3b8", fontSize: "11px" }}>
+          Showing {visiblePoints.length.toLocaleString()} of{" "}
+          {(catalogTotal || satellitePoints.length).toLocaleString()} satellites in view
+        </div>
         {legendItems.slice(0, 14).map((satellite) => (
           <div key={satellite.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span
@@ -296,6 +419,9 @@ export default function SatellitesPage() {
             ? "Loading TLE..."
             : `Updated: ${lastUpdated ? lastUpdated.toLocaleTimeString() : "--"}`}
         </div>
+        {progressText ? (
+          <div style={{ color: "#93c5fd", fontSize: "11px" }}>{progressText}</div>
+        ) : null}
         {error ? <div style={{ color: "#fca5a5", fontSize: "12px" }}>{error}</div> : null}
       </section>
     </div>
